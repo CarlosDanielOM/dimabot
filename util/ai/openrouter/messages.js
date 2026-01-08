@@ -287,38 +287,41 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
         let provider = selectedModel.split('/')[0];
         let actualModel = selectedModel.split('/')[1];
         let modelName = actualModel.split(':')[0];
+
+        if(streamer.polar_sh_customer_id) {
         
-        let eventData = {
-            name: 'ai_usage',
-            customerId: streamer.polar_sh_customer_id,
-            metadata: {
-                _cost: {
-                    "amount": actualCost * 100,
-                    "currency": "USD"
-                },
-                _llm: {
-                    vendor: provider,
-                    model: modelName,
-                    input_tokens: aiUsage?.prompt_tokens || 0,
-                    output_tokens: aiUsage?.completion_tokens || 0,
-                    total_tokens: aiUsage?.total_tokens || 0,
-                },
-                cost: actualCost * 100,
-                currency: 'USD'
+            let eventData = {
+                name: 'ai_usage',
+                customerId: streamer.polar_sh_customer_id,
+                metadata: {
+                    _cost: {
+                        "amount": actualCost * 100,
+                        "currency": "USD"
+                    },
+                    _llm: {
+                        vendor: provider,
+                        model: modelName,
+                        input_tokens: aiUsage?.prompt_tokens || 0,
+                        output_tokens: aiUsage?.completion_tokens || 0,
+                        total_tokens: aiUsage?.total_tokens || 0,
+                    },
+                    cost: actualCost * 100,
+                    currency: 'USD'
+                }
             }
+
+            ingestData.push(eventData);
+
+            let polarshClient = getPolarShClient();
+
+            polarshClient.events.ingest({
+                events: ingestData
+            }).then(() => {
+                cacheClient.del(`${channelID}:ai:polarshevent`);
+            }).catch((error) => {
+                console.error('PolarSH ingest error:', error);
+            });
         }
-
-        ingestData.push(eventData);
-
-        let polarshClient = getPolarShClient();
-
-        polarshClient.events.ingest({
-            events: ingestData
-        }).then(() => {
-            cacheClient.del(`${channelID}:ai:polarshevent`);
-        }).catch((error) => {
-            console.error('PolarSH ingest error:', error);
-        });
 
         return messageData?.content || '';
         

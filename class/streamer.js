@@ -18,7 +18,7 @@ class STREAMERS {
         let result = [];
         try {
             this.cache = getClient();
-            result = await channelSchema.find({actived: true}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions');
+            result = await channelSchema.find({actived: true}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions polar_sh_customer_id');
             this.cache.del('streamers:by:name');
             this.cache.del('streamers:by:id');
 

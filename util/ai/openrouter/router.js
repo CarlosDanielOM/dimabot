@@ -61,30 +61,32 @@ async function router(channelID, message, preset = '@preset/router', history = [
     //? add the prompt cost to usage cost to get actual cost before vendor discounts to company
     let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
 
-    let ingestData = [];
-    let eventData = {
-        name: 'ai_usage',
-        customerId: streamer.polar_sh_customer_id,
-        metadata: {
-            _cost: {
-                "amount": actualCost * 100,
-                "currency": "USD"
-            },
-            _llm: {
-                vendor: 'openai',
-                model: 'gpt-oss-20b',
-                input_tokens: aiUsage?.prompt_tokens || 0,
-                output_tokens: aiUsage?.completion_tokens || 0,
-                total_tokens: aiUsage?.total_tokens || 0,
-            },
-            cost: actualCost * 100,
-            currency: 'USD'
+    if(streamer.polar_sh_customer_id) {
+        let ingestData = [];
+        let eventData = {
+            name: 'ai_usage',
+            customerId: streamer.polar_sh_customer_id,
+            metadata: {
+                _cost: {
+                    "amount": actualCost * 100,
+                    "currency": "USD"
+                },
+                _llm: {
+                    vendor: 'openai',
+                    model: 'gpt-oss-20b',
+                    input_tokens: aiUsage?.prompt_tokens || 0,
+                    output_tokens: aiUsage?.completion_tokens || 0,
+                    total_tokens: aiUsage?.total_tokens || 0,
+                },
+                cost: actualCost * 100,
+                currency: 'USD'
+            }
         }
+
+        ingestData.push(eventData);
+
+        await cacheClient.set(`${channelID}:ai:polarshevent`, JSON.stringify(ingestData));
     }
-
-    ingestData.push(eventData);
-
-    await cacheClient.set(`${channelID}:ai:polarshevent`, JSON.stringify(ingestData));
 
     let aiDecision;
     try {
