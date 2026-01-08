@@ -56,10 +56,6 @@ router.get('/register', async (req, res) => {
 
     try {
 
-        let polarshClient = getPolarShClient();
-
-        let channelToUpdate = await channelSchema.findOne({name: username});
-
         let dataToUpdate = {
             twitch_user_token: encryptedToken,
             twitch_user_refresh_token: encryptedRefreshToken,
@@ -69,35 +65,7 @@ router.get('/register', async (req, res) => {
             up_to_date_twitch_permissions: true,
         }
 
-        if(!channelToUpdate.polar_sh_customer_id) {
-            let customer = await polarshClient.customers.create({
-                email: channelToUpdate.email,
-                externalId: channelToUpdate._id.toString(),
-                name: channelToUpdate.name,
-                billingAddress: {
-                    country: 'US'
-                },
-                metadata: {
-                    twitch_user_id: channelToUpdate.twitch_user_id,
-                    twitch_user_name: channelToUpdate.name
-                }
-            })
-
-            dataToUpdate.polar_sh_customer_id = customer.id;
-        }
-
         updatedChannel = await channelSchema.findOneAndUpdate({name: username}, dataToUpdate);
-
-        if(updatedChannel.polar_sh_customer_id) {
-            const result = await polarshClient.subscriptions.create({
-                productId: FREE_TIER_ID,
-                customerId: updatedChannel.polar_sh_customer_id,
-            })
-
-            if(result.error) {
-                logger(result, true, updatedChannel.twitch_user_id, 'auth_polarsh_subscription');
-            }
-        }
 
         await STREAMERS.updateStreamers();
         let streamer = await STREAMERS.getStreamerByName(username);
@@ -289,6 +257,32 @@ router.post('/login', auth, async (req, res) => {
         });
 
         try {
+            let polarshClient = getPolarShClient();
+
+            let customer = await polarshClient.customers.create({
+                email: newChannel.email,
+                externalId: newChannel._id.toString(),
+                name: newChannel.name,
+                billingAddress: {
+                    country: 'US'
+                },
+                metadata: {
+                    twitch_user_id: newChannel.twitch_user_id,
+                    twitch_user_name: newChannel.name
+                }
+            });
+
+            newChannel.polar_sh_customer_id = customer.id;
+
+            const result = await polarshClient.subscriptions.create({
+                productId: FREE_TIER_ID,
+                customerId: newChannel.polar_sh_customer_id,
+            });
+
+            if(result.error) {
+                logger(result, true, newChannel.twitch_user_id, 'auth_polarsh_subscription');
+            }
+
             await newChannel.save();
             // Increment registered channels count
             await incrementSiteAnalytics('registered', 1);

@@ -21,8 +21,6 @@ async function serverInit() {
     let app = await server();
     let ws = await websocket.websocket(app);
 
-    await PolarUpdate();
-
     //! Testing Cache DB for Site Global Data Analytics
     if(await startSiteAnalytics()) {
       console.log('Site Global Data Analytics started successfully');
