@@ -301,9 +301,9 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
                     _llm: {
                         vendor: provider,
                         model: modelName,
-                        input_tokens: aiUsage?.prompt_tokens || 0,
-                        output_tokens: aiUsage?.completion_tokens || 0,
-                        total_tokens: aiUsage?.total_tokens || 0,
+                        inputTokens: aiUsage?.prompt_tokens || 0,
+                        outputTokens: aiUsage?.completion_tokens || 0,
+                        totalTokens: aiUsage?.total_tokens || 0,
                     },
                     cost: actualCost * 100,
                     currency: 'USD'

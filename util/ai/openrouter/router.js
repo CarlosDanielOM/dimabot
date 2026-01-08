@@ -74,9 +74,9 @@ async function router(channelID, message, preset = '@preset/router', history = [
                 _llm: {
                     vendor: 'openai',
                     model: 'gpt-oss-20b',
-                    input_tokens: aiUsage?.prompt_tokens || 0,
-                    output_tokens: aiUsage?.completion_tokens || 0,
-                    total_tokens: aiUsage?.total_tokens || 0,
+                    inputTokens: aiUsage?.prompt_tokens || 0,
+                    outputTokens: aiUsage?.completion_tokens || 0,
+                    totalTokens: aiUsage?.total_tokens || 0,
                 },
                 cost: actualCost * 100,
                 currency: 'USD'
