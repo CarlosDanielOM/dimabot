@@ -62,14 +62,29 @@ async function router(channelID, message, preset = '@preset/router', history = [
     let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
 
     if(streamer.polar_sh_customer_id) {
+        // Round to avoid floating point precision issues and truncate to max digits
+        let amountValue = Math.round(actualCost * 100 * 1e10) / 1e10; // Round to 10 decimal places
+        let amountStr = amountValue.toString();
+        if (amountStr.length > 17) {
+            amountStr = amountStr.substring(0, 17);
+            amountValue = parseFloat(amountStr);
+        }
+        
+        let costValue = Math.round(actualCost * 100 * 1e8) / 1e8; // Round to 8 decimal places
+        let costStr = costValue.toString();
+        if (costStr.length > 12) {
+            costStr = costStr.substring(0, 12);
+            costValue = parseFloat(costStr);
+        }
+        
         let ingestData = [];
         let eventData = {
             name: 'ai_usage',
             customerId: streamer.polar_sh_customer_id,
             metadata: {
                 _cost: {
-                    "amount": actualCost * 100,
-                    "currency": "USD"
+                    "amount": amountValue,
+                    "currency": "usd"
                 },
                 _llm: {
                     vendor: 'openai',
@@ -78,8 +93,8 @@ async function router(channelID, message, preset = '@preset/router', history = [
                     outputTokens: aiUsage?.completion_tokens || 0,
                     totalTokens: aiUsage?.total_tokens || 0,
                 },
-                cost: actualCost * 100,
-                currency: 'USD'
+                cost: costValue,
+                currency: 'usd'
             }
         }
 
