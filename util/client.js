@@ -54,12 +54,13 @@ async function connectChannels() {
 }
 
 async function connectChannel(channel) {
+    let client = getClient();
     if(!isClientConnected) {
         console.error('Client not connected');
         return;
     }
     try {
-        await client.join(channel);
+        await getClient().join(channel);
     } catch (error) {
         console.error(`Error connecting to channel ${channel}: ${error}`);
     }

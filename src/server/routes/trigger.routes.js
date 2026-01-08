@@ -244,6 +244,7 @@ router.post('/:channelID/upload', async (req, res) => {
         let exists = await triggerFileSchema.exists({
             name: req.body.triggerName,
             fileType: req.file.mimetype,
+            channelID: channelID
         });
 
         if(exists) {

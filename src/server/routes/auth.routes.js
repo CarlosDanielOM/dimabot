@@ -16,6 +16,9 @@ const JSONCOMMANDS = require('../../../config/reservedcommands.json')
 const { incrementSiteAnalytics } = require('../../../util/siteanalytics');
 
 const auth = require("../../../middleware/auth");
+const { getPolarShClient } = require('../../../util/polarsh');
+
+const FREE_TIER_ID = "fccf0669-adab-447d-89c8-d77d8b83bea5";
 
 router.get('/register', async (req, res) => {
     const token = req.query.code;
@@ -52,14 +55,49 @@ router.get('/register', async (req, res) => {
     const encryptedRefreshToken = encrypt(refresh_token);
 
     try {
-        updatedChannel = await channelSchema.findOneAndUpdate({name: username}, {
+
+        let polarshClient = getPolarShClient();
+
+        let channelToUpdate = await channelSchema.findOne({name: username});
+
+        let dataToUpdate = {
             twitch_user_token: encryptedToken,
             twitch_user_refresh_token: encryptedRefreshToken,
             twitch_user_token_id: id_token,
             actived: true,
             chat_enabled: true,
             up_to_date_twitch_permissions: true,
-        });
+        }
+
+        if(!channelToUpdate.polar_sh_customer_id) {
+            let customer = await polarshClient.customers.create({
+                email: channelToUpdate.email,
+                externalId: channelToUpdate._id.toString(),
+                name: channelToUpdate.name,
+                billingAddress: {
+                    country: 'US'
+                },
+                metadata: {
+                    twitch_user_id: channelToUpdate.twitch_user_id,
+                    twitch_user_name: channelToUpdate.name
+                }
+            })
+
+            dataToUpdate.polar_sh_customer_id = customer.id;
+        }
+
+        updatedChannel = await channelSchema.findOneAndUpdate({name: username}, dataToUpdate);
+
+        if(updatedChannel.polar_sh_customer_id) {
+            const result = await polarshClient.subscriptions.create({
+                productId: FREE_TIER_ID,
+                customerId: updatedChannel.polar_sh_customer_id,
+            })
+
+            if(result.error) {
+                logger(result, true, updatedChannel.twitch_user_id, 'auth_polarsh_subscription');
+            }
+        }
 
         await STREAMERS.updateStreamers();
         let streamer = await STREAMERS.getStreamerByName(username);

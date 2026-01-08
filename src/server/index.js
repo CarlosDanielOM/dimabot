@@ -6,6 +6,7 @@ const STREAMERS = require("../../class/streamer")
 const CLIENT = require('../../util/client');
 const CACHE = require('../../util/cache');
 const { startSiteAnalytics } = require("../../util/siteanalytics");
+const { PolarUpdate } = require("../../util/ai/migration/polarsh");
 
 async function serverInit() {
   try {
@@ -19,6 +20,8 @@ async function serverInit() {
     
     let app = await server();
     let ws = await websocket.websocket(app);
+
+    await PolarUpdate();
 
     //! Testing Cache DB for Site Global Data Analytics
     if(await startSiteAnalytics()) {
