@@ -320,7 +320,8 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
                         totalTokens: aiUsage?.total_tokens || 0,
                     },
                     cost: costValue,
-                    currency: 'usd'
+                    currency: 'usd',
+                    reason: 'messages'
                 }
             }
 

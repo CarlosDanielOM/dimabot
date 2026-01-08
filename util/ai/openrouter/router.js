@@ -54,8 +54,6 @@ async function router(channelID, message, preset = '@preset/router', history = [
         };
     }
 
-    console.log(data.usage);
-
     let aiUsage = data.usage;
 
     //? add the prompt cost to usage cost to get actual cost before vendor discounts to company
@@ -94,7 +92,8 @@ async function router(channelID, message, preset = '@preset/router', history = [
                     totalTokens: aiUsage?.total_tokens || 0,
                 },
                 cost: costValue,
-                currency: 'usd'
+                currency: 'usd',
+                reason: 'router'
             }
         }
 
