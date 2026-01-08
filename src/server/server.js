@@ -33,6 +33,9 @@ async function server() {
     app.use('/ai-personality', require('./routes/aiPersonality.routes'));
     app.use('/site', require('./routes/site.routes'));
 
+    //? Webhooks Endpoints
+    app.use('/polar', require('./routes/webhooks/polarsh.webhook'));
+
     app.get('/config/commands/reserved', (req, res) => {
         res.status(200).json({
             error: false,

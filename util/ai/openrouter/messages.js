@@ -11,6 +11,7 @@ const STREAMERS = require('../../../class/streamer');
 const AIPersonality = require('../../../schema/channelAIPersonality');
 const formatBadges = require('../../badges');
 const { getClient } = require('../../database/dragonfly');
+const { getPolarShClient } = require('../../polarsh');
 const { constructChatSystemMessages } = require('../prompts');
 
 // ============================================================================
@@ -258,7 +259,8 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
                 timestamp: new Date().toISOString()
             }));
         }
-        
+
+        let aiUsage = data.usage;
         // Track usage statistics
         if (usageData && channelID) {
             try {
@@ -270,7 +272,54 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
                 console.error('Cache error tracking AI usage:', cacheError);
             }
         }
+
+        let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
         
+        let storedEvents = await cacheClient.get(`${channelID}:ai:polarshevent`);
+        let ingestData = [];
+        try {
+            ingestData = storedEvents ? JSON.parse(storedEvents) : [];
+        } catch (e) {
+            console.error('Failed to parse stored AI events:', e);
+            ingestData = [];
+        }
+
+        let provider = selectedModel.split('/')[0];
+        let actualModel = selectedModel.split('/')[1];
+        let modelName = actualModel.split(':')[0];
+        
+        let eventData = {
+            name: 'ai_usage',
+            customerId: streamer.polar_sh_customer_id,
+            metadata: {
+                _cost: {
+                    "amount": actualCost * 100,
+                    "currency": "USD"
+                },
+                _llm: {
+                    vendor: provider,
+                    model: modelName,
+                    input_tokens: aiUsage?.prompt_tokens || 0,
+                    output_tokens: aiUsage?.completion_tokens || 0,
+                    total_tokens: aiUsage?.total_tokens || 0,
+                },
+                cost: actualCost * 100,
+                currency: 'USD'
+            }
+        }
+
+        ingestData.push(eventData);
+
+        let polarshClient = getPolarShClient();
+
+        polarshClient.events.ingest({
+            events: ingestData
+        }).then(() => {
+            cacheClient.del(`${channelID}:ai:polarshevent`);
+        }).catch((error) => {
+            console.error('PolarSH ingest error:', error);
+        });
+
         return messageData?.content || '';
         
     } catch (fetchError) {

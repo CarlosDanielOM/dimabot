@@ -1,3 +1,4 @@
+require('dotenv').config();
 const dragonfly = require("../../util/database/dragonfly");
 const mongodb = require("../../util/database/mongodb");
 const server = require("./server");
@@ -6,7 +7,6 @@ const STREAMERS = require("../../class/streamer")
 const CLIENT = require('../../util/client');
 const CACHE = require('../../util/cache');
 const { startSiteAnalytics } = require("../../util/siteanalytics");
-const { PolarUpdate } = require("../../util/ai/migration/polarsh");
 
 async function serverInit() {
   try {

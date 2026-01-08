@@ -34,7 +34,8 @@ class STREAMERS {
                     premium: result[i].premium ? 'true' : 'false',
                     premium_plus: result[i].premium_plus ? 'true' : 'false',
                     chat_enabled: result[i].chat_enabled ? 'true' : 'false',
-                    up_to_date_twitch_permissions: result[i].up_to_date_twitch_permissions ? 'true' : 'false'
+                    up_to_date_twitch_permissions: result[i].up_to_date_twitch_permissions ? 'true' : 'false',
+                    polar_sh_customer_id: result[i].polar_sh_customer_id
                 }
 
                 // Store the data with both name and ID as keys
@@ -54,7 +55,7 @@ class STREAMERS {
     async getStreamerFromDBByName(name) {
         try {
             this.cache = getClient();
-            const streamer = await channelSchema.findOne({name: name}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions');
+            const streamer = await channelSchema.findOne({name: name}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions polar_sh_customer_id');
 
             if (streamer) {
                 let data = {
@@ -66,7 +67,8 @@ class STREAMERS {
                     premium: streamer.premium ? 'true' : 'false',
                     premium_plus: streamer.premium_plus ? 'true' : 'false',
                     chat_enabled: streamer.chat_enabled ? 'true' : 'false',
-                    up_to_date_twitch_permissions: streamer.up_to_date_twitch_permissions ? 'true' : 'false'
+                    up_to_date_twitch_permissions: streamer.up_to_date_twitch_permissions ? 'true' : 'false',
+                    polar_sh_customer_id: streamer.polar_sh_customer_id
                 }
 
                 // Store the data with both name and ID as keys
@@ -85,7 +87,7 @@ class STREAMERS {
     async getStreamerFromDBById(id) {
         try {
             this.cache = getClient();
-            const streamer = await channelSchema.findOne({twitch_user_id: id}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions');
+            const streamer = await channelSchema.findOne({twitch_user_id: id}, 'name twitch_user_id twitch_user_token twitch_user_refresh_token actived premium premium_plus refreshedAt chat_enabled up_to_date_twitch_permissions polar_sh_customer_id');
 
             if (streamer) {
                 let data = {
@@ -97,7 +99,8 @@ class STREAMERS {
                     premium: streamer.premium ? 'true' : 'false',
                     premium_plus: streamer.premium_plus ? 'true' : 'false',
                     chat_enabled: streamer.chat_enabled ? 'true' : 'false',
-                    up_to_date_twitch_permissions: streamer.up_to_date_twitch_permissions ? 'true' : 'false'
+                    up_to_date_twitch_permissions: streamer.up_to_date_twitch_permissions ? 'true' : 'false',
+                    polar_sh_customer_id: streamer.polar_sh_customer_id
                 }
 
                 // Store the data with both name and ID as keys
