@@ -1,11 +1,12 @@
 const express = require('express');
-const { getPolarShClient } = require('../../../../util/polarsh');
 const { validateEvent, WebhookVerificationError } = require('@polar-sh/sdk/webhooks.js');
 const router = express.Router();
 
 router.post("/webhook", express.raw({ type: 'application/json' }), (req, res) => {
     try {
         let event = validateEvent(req.body, req.headers, process.env.POLARSH_WEBHOOK_SECRET);
+
+        console.log(event);
 
         //? Process event
 
