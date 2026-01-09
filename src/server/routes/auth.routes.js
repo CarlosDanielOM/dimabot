@@ -18,8 +18,6 @@ const { incrementSiteAnalytics } = require('../../../util/siteanalytics');
 const auth = require("../../../middleware/auth");
 const { getPolarShClient } = require('../../../util/polarsh');
 
-const FREE_TIER_ID = "fccf0669-adab-447d-89c8-d77d8b83bea5";
-
 router.get('/register', async (req, res) => {
     const token = req.query.code;
     const username = req.query.state;
@@ -66,6 +64,25 @@ router.get('/register', async (req, res) => {
         }
 
         updatedChannel = await channelSchema.findOneAndUpdate({name: username}, dataToUpdate);
+
+        if (updatedChannel && !updatedChannel.actived && updatedChannel.polar_sh_customer_id) {
+            let polarshClient = getPolarShClient();
+            const ingestResult = await polarshClient.events.ingest({
+                events: [{
+                    name: 'ai_usage',
+                    customerId: updatedChannel.polar_sh_customer_id,
+                    metadata: {
+                        cost: -25,
+                        currency: 'usd',
+                        reason: 'Free benefits'
+                    }
+                }]
+            });
+
+            if(ingestResult.error) {
+                logger(ingestResult, true, updatedChannel.twitch_user_id, 'auth_polarsh_ingest');
+            }
+        }
 
         await STREAMERS.updateStreamers();
         let streamer = await STREAMERS.getStreamerByName(username);
@@ -274,14 +291,6 @@ router.post('/login', auth, async (req, res) => {
 
             newChannel.polar_sh_customer_id = customer.id;
 
-            const result = await polarshClient.subscriptions.create({
-                productId: FREE_TIER_ID,
-                customerId: newChannel.polar_sh_customer_id,
-            });
-
-            if(result.error) {
-                logger(result, true, newChannel.twitch_user_id, 'auth_polarsh_subscription');
-            }
 
             await newChannel.save();
             // Increment registered channels count

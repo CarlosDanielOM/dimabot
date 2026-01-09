@@ -7,6 +7,7 @@ const STREAMERS = require("../../class/streamer")
 const CLIENT = require('../../util/client');
 const CACHE = require('../../util/cache');
 const { startSiteAnalytics } = require("../../util/siteanalytics");
+const { deleteFreeTierSubscriptionFromAllCustomers, addFreeMeterBenefitToAllCustomersWithoutASubscription } = require('../../util/ai/migration/polarsh');
 
 async function serverInit() {
   try {

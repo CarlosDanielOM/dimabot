@@ -15,7 +15,7 @@ async function polarSHEventsHandler(eventData) {
 
     switch(eventData.type) {
         case 'customer.state_changed': {
-            const channelID = eventData.data.metadata?.twitch_channel_id;
+            const channelID = eventData.data.metadata?.twitch_user_id;
             if (!channelID) {
                 console.error('Polar.sh webhook: Missing twitch_channel_id in metadata');
                 return;
@@ -36,9 +36,11 @@ async function polarSHEventsHandler(eventData) {
             break;
         }
         case 'subscription.created':
-        case 'subscription.updated': {
+        case 'subscription.updated':
+        case 'subscription.canceled':
+        case 'subscription.revoked': {
             // Try to get twitch_channel_id from subscription metadata first, then from customer metadata
-            const channelID = eventData.data.metadata?.twitch_channel_id || eventData.data.customer?.metadata?.twitch_channel_id;
+            const channelID = eventData.data.metadata?.twitch_user_id || eventData.data.customer?.metadata?.twitch_user_id;
             if (!channelID) {
                 console.error('Polar.sh webhook: Missing twitch_channel_id in subscription/customer metadata');
                 return;
@@ -70,6 +72,12 @@ async function polarSHEventsHandler(eventData) {
                     break;
             }
 
+            // Check if subscription is active
+            if (eventData.data.status !== 'active') {
+                premium = false;
+                premium_plus = false;
+            }
+
             // Update the channel in the database
             const updatedChannel = await Channel.findOneAndUpdate(
                 { twitch_user_id: channelID },
@@ -82,7 +90,7 @@ async function polarSHEventsHandler(eventData) {
             );
 
             if (updatedChannel) {
-                console.log(`Polar.sh webhook: Updated channel ${updatedChannel.name} (${channelID}) - premium: ${premium}, premium_plus: ${premium_plus}`);
+                console.log(`Polar.sh webhook: Updated channel ${updatedChannel.name} (${channelID}) - premium: ${premium}, premium_plus: ${premium_plus} (Status: ${eventData.data.status})`);
             } else {
                 console.error(`Polar.sh webhook: Channel not found for twitch_user_id: ${channelID}`);
             }
