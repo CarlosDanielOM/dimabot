@@ -8,6 +8,7 @@
 require('dotenv').config();
 const { constructSystemMessages } = require('../prompts');
 const { getClient } = require('../../database/dragonfly');
+const { getPolarShClient } = require('../../polarsh');
 
 // ============================================================================
 // MODEL CONFIGURATION - Tiered Nitro Models
@@ -109,9 +110,10 @@ function generateTimeLeftToNextMonthInSeconds() {
  * @param {string} userContext.username - Username of the person invoking the command
  * @param {string} userContext.badges - Optional formatted badge string
  * @param {string} prompt - The prompt text to send to the AI
+ * @param {string} reason - The reason for the AI command (default: 'commands')
  * @returns {Promise<{error: boolean, message: string}>} - Result object
  */
-async function executeAiCommand(streamer, userContext, prompt) {
+async function executeAiCommand(streamer, userContext, prompt, reason = 'commands') {
     const cacheClient = getClient();
     const channelID = streamer?.user_id;
     
@@ -142,7 +144,10 @@ async function executeAiCommand(streamer, userContext, prompt) {
     const body = {
         model: model,
         messages: messages,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        usage: {
+            include: true
+        }
     };
     
     try {
@@ -175,6 +180,7 @@ async function executeAiCommand(streamer, userContext, prompt) {
         
         // Track usage if available
         const usageData = data.usage;
+        let aiUsage = data.usage;
         if (usageData && channelID) {
             try {
                 await cacheClient.hincrby(`${channelID}:chatbot:usage`, 'total_tokens', usageData.total_tokens || 0);
@@ -194,6 +200,71 @@ async function executeAiCommand(streamer, userContext, prompt) {
                 console.error('Cache error tracking AI usage:', cacheError);
                 // Don't fail the request due to cache issues
             }
+        }
+
+        let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
+        
+        let storedEvents = await cacheClient.get(`${channelID}:ai:polarshevent`);
+        let ingestData = [];
+        try {
+            ingestData = storedEvents ? JSON.parse(storedEvents) : [];
+        } catch (e) {
+            console.error('Failed to parse stored AI events:', e);
+            ingestData = [];
+        }
+
+        let provider = model.split('/')[0];
+        let actualModel = model.split('/')[1];
+        let modelName = actualModel ? actualModel.split(':')[0] : model;
+
+        if(streamer.polar_sh_customer_id) {
+            // Round to avoid floating point precision issues and truncate to max digits
+            let amountValue = Math.round(actualCost * 100 * 1e10) / 1e10; // Round to 10 decimal places
+            let amountStr = amountValue.toString();
+            if (amountStr.length > 17) {
+                amountStr = amountStr.substring(0, 17);
+                amountValue = parseFloat(amountStr);
+            }
+            
+            let costValue = Math.round(actualCost * 100 * 1e8) / 1e8; // Round to 8 decimal places
+            let costStr = costValue.toString();
+            if (costStr.length > 12) {
+                costStr = costStr.substring(0, 12);
+                costValue = parseFloat(costStr);
+            }
+        
+            let eventData = {
+                name: 'ai_usage',
+                customerId: streamer.polar_sh_customer_id,
+                metadata: {
+                    _cost: {
+                        "amount": amountValue,
+                        "currency": "usd"
+                    },
+                    _llm: {
+                        vendor: provider,
+                        model: modelName,
+                        inputTokens: aiUsage?.prompt_tokens || 0,
+                        outputTokens: aiUsage?.completion_tokens || 0,
+                        totalTokens: aiUsage?.total_tokens || 0,
+                    },
+                    cost: costValue,
+                    currency: 'usd',
+                    reason: reason
+                }
+            }
+
+            ingestData.push(eventData);
+
+            let polarshClient = getPolarShClient();
+
+            polarshClient.events.ingest({
+                events: ingestData
+            }).then(() => {
+                cacheClient.del(`${channelID}:ai:polarshevent`);
+            }).catch((error) => {
+                console.error('PolarSH ingest error:', error);
+            });
         }
         
         // CRITICAL: Sanitize output to prevent command injection
