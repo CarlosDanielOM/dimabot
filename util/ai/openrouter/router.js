@@ -12,6 +12,12 @@ require('dotenv').config();
 async function router(channelID, message, preset = '@preset/router', history = [], tags = {}, options = [], streamer) {
     const cacheClient = getClient();
     let toolContext = [];
+
+    // Check if user has exhausted AI credits
+    const isExhausted = await cacheClient.exists(`${channelID}:ai:exhaust`);
+    if (isExhausted) {
+        preset = '@preset/router-free';
+    }
     
     const headers = {
         'Content-Type': 'application/json',
@@ -140,7 +146,8 @@ async function router(channelID, message, preset = '@preset/router', history = [
     }
 
     // Select model based on streamer tier - use Nitro models
-    const model = selectModel(streamer);
+    // Override to free model if credits are exhausted
+    const model = isExhausted ? MODELS.free : selectModel(streamer);
 
     // Get AI response with tool context
     const AiAnswer = await AiResponse(channelID, message, model, history, tags, options, toolContext);

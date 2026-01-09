@@ -172,8 +172,12 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
         ]
     };
     
+    // Check if user has exhausted AI credits - force free model if so
+    const isExhausted = await cacheClient.exists(`${channelID}:ai:exhaust`);
+    
     // Select model based on streamer tier if not explicitly provided
-    const selectedModel = model || selectModel(streamer);
+    // Override to free model if credits are exhausted
+    const selectedModel = isExhausted ? MODELS.free : (model || selectModel(streamer));
     const maxTokens = getTokenLimit(selectedModel);
     
     // Build user context from Twitch tags
