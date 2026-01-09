@@ -9,6 +9,9 @@ const { getIO } = require('./websocket');
 async function server() {
     let app = express();
 
+    //? Webhooks Endpoints
+    app.use('/polar', require('./routes/webhooks/polarsh.webhook'));
+
     app.use(bodyParser.json());
     app.use(bodyParser.urlencoded({ extended: true }));
     app.use(express.static(`${__dirname}/routes/public`));
@@ -32,9 +35,6 @@ async function server() {
     app.use('/validation', require('./routes/validation.routes'));
     app.use('/ai-personality', require('./routes/aiPersonality.routes'));
     app.use('/site', require('./routes/site.routes'));
-
-    //? Webhooks Endpoints
-    app.use('/polar', require('./routes/webhooks/polarsh.webhook'));
 
     app.get('/config/commands/reserved', (req, res) => {
         res.status(200).json({
