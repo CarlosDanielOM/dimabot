@@ -20,6 +20,7 @@ router.post("/webhook", express.raw({ type: 'application/json' }), (req, res) =>
             res.status(500).send({
                 error: true,
                 message: 'Internal server error',
+                err: error,
                 status: 500
             });
         }
