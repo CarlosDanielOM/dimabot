@@ -1,9 +1,5 @@
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+const { readFileSync } = require('fs');
+const { join } = require('path');
 
 /**
  * @typedef {Object} EndpointDefinition
@@ -11,6 +7,7 @@ const __dirname = dirname(__filename);
  * @property {string} url - Full URL of the endpoint
  * @property {Object<string, string>} headers - Required headers
  * @property {string} bodySchema - Body schema as string (for documentation)
+ * @property {string} description - Description and additional documentation for the endpoint
  */
 
 /**
@@ -18,7 +15,7 @@ const __dirname = dirname(__filename);
  * @param {string} [filePath] - Path to the doc-llm.txt file
  * @returns {EndpointDefinition[]}
  */
-export function parseDocLLM(filePath) {
+function parseDocLLM(filePath) {
     const docPath = filePath || join(__dirname, 'doc-llm.txt');
     
     let content;
@@ -71,17 +68,49 @@ export function parseDocLLM(filePath) {
             }
         }
 
-        // Extract body schema (everything from { to the end)
+        // Extract body schema and description
         let bodySchema = '';
+        let description = '';
+        
         if (bodyStartIndex !== -1) {
-            bodySchema = lines.slice(bodyStartIndex).join('\n');
+            // Find the closing brace that ends the body schema
+            let braceCount = 0;
+            let bodyEndIndex = -1;
+            
+            for (let i = bodyStartIndex; i < lines.length; i++) {
+                const line = lines[i];
+                for (const char of line) {
+                    if (char === '{') braceCount++;
+                    if (char === '}') braceCount--;
+                }
+                
+                // When braceCount returns to 0, we've found the end of the body
+                if (braceCount === 0) {
+                    bodyEndIndex = i;
+                    break;
+                }
+            }
+            
+            if (bodyEndIndex !== -1) {
+                // Extract body schema (from { to })
+                bodySchema = lines.slice(bodyStartIndex, bodyEndIndex + 1).join('\n');
+                
+                // Extract description (everything after the closing brace)
+                if (bodyEndIndex + 1 < lines.length) {
+                    description = lines.slice(bodyEndIndex + 1).join('\n').trim();
+                }
+            } else {
+                // Fallback: no matching brace found, treat all as body
+                bodySchema = lines.slice(bodyStartIndex).join('\n');
+            }
         }
 
         endpoints.push({
             method,
             url,
             headers,
-            bodySchema
+            bodySchema,
+            description
         });
     }
 
@@ -95,7 +124,7 @@ export function parseDocLLM(filePath) {
  * @param {EndpointDefinition[]} allowedEndpoints - List of allowed endpoints
  * @returns {{ allowed: boolean, reason?: string, endpoint?: EndpointDefinition }}
  */
-export function validateRequest(requestMethod, requestUrl, allowedEndpoints) {
+function validateRequest(requestMethod, requestUrl, allowedEndpoints) {
     const method = requestMethod.toUpperCase();
     
     // Normalize the URL (remove trailing slashes, handle query params)
@@ -153,7 +182,7 @@ export function validateRequest(requestMethod, requestUrl, allowedEndpoints) {
  * @param {string} [docPath] - Path to doc-llm.txt
  * @returns {{ validate: (method: string, url: string) => { allowed: boolean, reason?: string, endpoint?: EndpointDefinition }, reload: () => void, getEndpoints: () => EndpointDefinition[] }}
  */
-export function createPolicyValidator(docPath) {
+function createPolicyValidator(docPath) {
     let endpoints = parseDocLLM(docPath);
 
     return {
@@ -180,7 +209,7 @@ export function createPolicyValidator(docPath) {
     };
 }
 
-export default {
+module.exports = {
     parseDocLLM,
     validateRequest,
     createPolicyValidator

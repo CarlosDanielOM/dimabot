@@ -16,7 +16,7 @@ const JSONCOMMANDS = require('../../../config/reservedcommands.json')
 const { incrementSiteAnalytics } = require('../../../util/siteanalytics');
 
 const auth = require("../../../middleware/auth");
-const { getPolarShClient } = require('../../../util/polarsh');
+const { ingestPolarSHEvent } = require('../../../util/polarsh');
 
 router.get('/register', async (req, res) => {
     const token = req.query.code;
@@ -66,17 +66,11 @@ router.get('/register', async (req, res) => {
         updatedChannel = await channelSchema.findOneAndUpdate({name: username}, dataToUpdate);
 
         if (updatedChannel && !updatedChannel.actived && updatedChannel.polar_sh_customer_id) {
-            let polarshClient = getPolarShClient();
-            const ingestResult = await polarshClient.events.ingest({
-                events: [{
-                    name: 'ai_usage',
-                    customerId: updatedChannel.polar_sh_customer_id,
-                    metadata: {
-                        cost: -25,
-                        currency: 'usd',
-                        reason: 'Free benefits'
-                    }
-                }]
+            const ingestResult = await ingestPolarSHEvent({
+                customerId: updatedChannel.polar_sh_customer_id,
+                cost: -25,
+                reason: 'Free benefits',
+                mode: 'immediate'
             });
 
             if(ingestResult.error) {

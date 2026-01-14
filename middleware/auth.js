@@ -13,6 +13,11 @@ async function auth(req, res, next) {
         });
     }
 
+    // If token starts with "Bearer ", remove the prefix
+    if (token.startsWith('Bearer ')) {
+        token = token.slice(7); // Remove "Bearer " (7 characters)
+    }
+
     let exists = await cacheClient.exists(`token:${token}`);
 
     if (exists) {

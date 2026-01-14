@@ -1,5 +1,5 @@
-import ivm from 'isolated-vm';
-import { createPolicyValidator } from './policy.js';
+const ivm = require('isolated-vm');
+const { createPolicyValidator } = require('./policy.js');
 
 /**
  * @typedef {Object} SandboxResult
@@ -16,6 +16,7 @@ import { createPolicyValidator } from './policy.js';
  * @property {number} [timeout=30000] - Timeout in milliseconds
  * @property {Object<string, string>} [env={}] - Environment variables to inject
  * @property {string} [policyPath] - Path to doc-llm.txt for endpoint policy
+ * @property {Object<string, Function>} [utils={}] - Utility functions to inject
  */
 
 const MAX_ERROR_LINES = 50;
@@ -98,12 +99,13 @@ function createFetchBridge(policyValidator, envVars) {
  * @param {SandboxOptions} [options={}] - Execution options
  * @returns {Promise<SandboxResult>}
  */
-export async function runSandbox(code, options = {}) {
+async function runSandbox(code, options = {}) {
     const {
         memoryLimit = DEFAULT_MEMORY_LIMIT,
         timeout = DEFAULT_TIMEOUT,
         env = {},
-        policyPath
+        policyPath,
+        utils = {}
     } = options;
 
     const startTime = Date.now();
@@ -144,10 +146,42 @@ export async function runSandbox(code, options = {}) {
         // Inject environment variables (read-only copy)
         await jail.set('__envData', new ivm.ExternalCopy(env).copyInto());
 
+        // Inject utilities as reference callbacks
+        const utilsJail = await isolate.createContext();
+        for (const [name, fn] of Object.entries(utils)) {
+            if (typeof fn === 'function') {
+                await jail.set(`__util_${name}`, new ivm.Reference(fn));
+            }
+        }
+
         // Set up the runtime environment inside the isolate
         const setupScript = await isolate.compileScript(`
+            // Ensure Array prototypes are available (should be by default, but this reinforces it)
+            if (!Array.prototype.find) {
+                Array.prototype.find = function(predicate) {
+                    if (this == null) throw new TypeError('Array.prototype.find called on null or undefined');
+                    if (typeof predicate !== 'function') throw new TypeError('predicate must be a function');
+                    var list = Object(this);
+                    var length = list.length >>> 0;
+                    var thisArg = arguments[1];
+                    var value;
+                    for (var i = 0; i < length; i++) {
+                        value = list[i];
+                        if (predicate.call(thisArg, value, i, list)) return value;
+                    }
+                    return undefined;
+                };
+            }
+
             // Create env object (frozen for security)
             const env = Object.freeze(__envData);
+
+            // Set up utilities
+            ${Object.keys(utils).map(name => `
+                const ${name} = (...args) => {
+                    return __util_${name}.apply(undefined, args, { result: { copy: true }, arguments: { copy: true } });
+                };
+            `).join('\n')}
 
             // Create console wrapper
             const console = {
@@ -185,22 +219,75 @@ export async function runSandbox(code, options = {}) {
             async function fetch(url, options = {}) {
                 const optionsStr = JSON.stringify(options);
                 const resultStr = await __fetchBridge.apply(undefined, [url, optionsStr], { result: { promise: true } });
-                return JSON.parse(resultStr);
+                const responseData = JSON.parse(resultStr);
+                
+                // Create a Response-like object with standard methods
+                return {
+                    ok: responseData.ok,
+                    status: responseData.status,
+                    statusText: responseData.statusText,
+                    headers: responseData.headers,
+                    url: responseData.url,
+                    // Add standard Response methods
+                    json: async () => {
+                        if (typeof responseData.body === 'string') {
+                            return JSON.parse(responseData.body);
+                        }
+                        return responseData.body;
+                    },
+                    text: async () => {
+                        if (typeof responseData.body === 'string') {
+                            return responseData.body;
+                        }
+                        return JSON.stringify(responseData.body);
+                    },
+                    // Direct access to body for convenience
+                    body: responseData.body
+                };
+            }
+
+            // Result serializer helper for transferring return values
+            function __resultSerializer(value) {
+                // Handle cases where value might be a proxy or have lost its prototype
+                if (Array.isArray(value) && !value.find) {
+                    Object.setPrototypeOf(value, Array.prototype);
+                }
+                
+                // Special marker for undefined (JSON.stringify removes undefined)
+                if (value === undefined) {
+                    return JSON.stringify({ __type: 'undefined' });
+                }
+                
+                try {
+                    // Serialize the value to JSON
+                    return JSON.stringify({ __type: 'value', data: value });
+                } catch (err) {
+                    // Handle non-serializable values (functions, circular refs, etc.)
+                    return JSON.stringify({ 
+                        __type: 'error', 
+                        message: 'Value is not serializable: ' + err.message 
+                    });
+                }
             }
 
             // Make these available globally
             global.env = env;
+            ${Object.keys(utils).map(name => `global.${name} = ${name};`).join('\n')}
             global.console = console;
             global.fetch = fetch;
+            global.__resultSerializer = __resultSerializer;
         `);
 
         await setupScript.run(context);
 
-        // Wrap user code in async IIFE
+        // Wrap user code in async IIFE with result serialization
         const wrappedCode = `
             (async () => {
                 try {
-                    ${code}
+                    const __userResult = await (async () => {
+                        ${code}
+                    })();
+                    return __resultSerializer(__userResult);
                 } catch (e) {
                     throw e;
                 }
@@ -226,12 +313,39 @@ export async function runSandbox(code, options = {}) {
         try {
             const rawResult = await Promise.race([executionPromise, timeoutPromise]);
             
-            // Try to serialize the result
-            if (rawResult !== undefined) {
+            // Deserialize the result from the isolate
+            if (rawResult !== undefined && rawResult !== null) {
                 try {
-                    result = typeof rawResult === 'object' ? rawResult : rawResult;
-                } catch {
-                    result = String(rawResult);
+                    // Copy the value from the isolate context
+                    const serializedResult = typeof rawResult.copy === 'function' 
+                        ? rawResult.copy() 
+                        : rawResult;
+                    
+                    // Parse the JSON-serialized result
+                    const parsed = JSON.parse(serializedResult);
+                    
+                    // Handle different result types
+                    if (parsed.__type === 'undefined') {
+                        result = undefined;
+                    } else if (parsed.__type === 'value') {
+                        result = parsed.data;
+                    } else if (parsed.__type === 'error') {
+                        // Non-serializable value
+                        error = parsed.message;
+                        result = null;
+                    } else {
+                        // Fallback for unexpected format
+                        result = parsed;
+                    }
+                } catch (deserializeError) {
+                    // If deserialization fails, try to get string representation
+                    try {
+                        result = typeof rawResult.copy === 'function' 
+                            ? rawResult.copy() 
+                            : String(rawResult);
+                    } catch {
+                        result = '[Unable to deserialize result]';
+                    }
                 }
             }
         } catch (execError) {
@@ -264,7 +378,7 @@ export async function runSandbox(code, options = {}) {
  * @param {SandboxOptions} defaultOptions - Default options for all executions
  * @returns {{ run: (code: string, options?: Partial<SandboxOptions>) => Promise<SandboxResult> }}
  */
-export function createSandbox(defaultOptions = {}) {
+function createSandbox(defaultOptions = {}) {
     return {
         async run(code, options = {}) {
             return runSandbox(code, { ...defaultOptions, ...options });
@@ -272,7 +386,7 @@ export function createSandbox(defaultOptions = {}) {
     };
 }
 
-export default {
+module.exports = {
     runSandbox,
     createSandbox
 };

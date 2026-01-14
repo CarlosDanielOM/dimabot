@@ -6,7 +6,7 @@
  * 
  * @example
  * // Direct execution (no queue)
- * import { runSandbox } from './util/ai/sandbox/index.js';
+ * const { runSandbox } = require('./util/ai/sandbox/index.js');
  * 
  * const result = await runSandbox(`
  *   const response = await fetch('https://api.example.com/data', {
@@ -19,25 +19,22 @@
  * 
  * @example
  * // Queued execution (recommended for high load)
- * import { createSandboxQueue } from './util/ai/sandbox/index.js';
- * import dragonfly from './util/database/dragonfly.js';
+ * const { createSandboxQueue } = require('./util/ai/sandbox/index.js');
+ * const dragonfly = require('./util/database/dragonfly.js');
  * 
  * const queue = createSandboxQueue(dragonfly.getClient());
  * const result = await queue.execute(code, { AUTH_TOKEN: 'token' });
  */
 
-export { runSandbox, createSandbox } from './sandbox.js';
-export { createSandboxQueue } from './queue.js';
-export { createPolicyValidator, parseDocLLM, validateRequest } from './policy.js';
+const { runSandbox, createSandbox } = require('./sandbox.js');
+const { createSandboxQueue } = require('./queue.js');
+const { createPolicyValidator, parseDocLLM, validateRequest } = require('./policy.js');
 
-// Default export for convenience
-import { runSandbox, createSandbox } from './sandbox.js';
-import { createSandboxQueue } from './queue.js';
-import { createPolicyValidator } from './policy.js';
-
-export default {
+module.exports = {
     runSandbox,
     createSandbox,
     createSandboxQueue,
-    createPolicyValidator
+    createPolicyValidator,
+    parseDocLLM,
+    validateRequest
 };

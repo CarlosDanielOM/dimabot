@@ -1,4 +1,4 @@
-import { runSandbox } from './sandbox.js';
+const { runSandbox } = require('./sandbox.js');
 
 /**
  * @typedef {Object} QueueJob
@@ -31,7 +31,7 @@ const RESULT_TTL = 3600; // 1 hour TTL for results
  * @param {import('ioredis').Redis} redisClient - The Redis client instance
  * @returns {Object}
  */
-export function createSandboxQueue(redisClient) {
+function createSandboxQueue(redisClient) {
     let isProcessing = false;
     let processingPromise = null;
 
@@ -296,6 +296,6 @@ export function createSandboxQueue(redisClient) {
     };
 }
 
-export default {
+module.exports = {
     createSandboxQueue
 };
