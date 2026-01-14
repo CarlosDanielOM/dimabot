@@ -1,14 +1,8 @@
 const { getClient } = require('../../util/database/dragonfly');
 const Channel = require('../../schema/channel');
+const { processSubscriptionReward, PRODUCT_IDS } = require('../../util/referral');
 
 const AI_USAGE_METER_ID = '01d90c16-87d0-4e31-880a-4045a8da90cd';
-
-// Polar.sh Product IDs
-const PRODUCT_IDS = {
-    FREE: 'fccf0669-adab-447d-89c8-d77d8b83bea5',
-    PREMIUM: '55c8d1d0-5cb8-405c-bcf2-d8dbb9ba0134',
-    PRO: '1468eea1-7ad0-40d2-b828-4d4cd6b4abdc'
-};
 
 async function polarSHEventsHandler(eventData) {
     const cacheClient = getClient();
@@ -91,6 +85,25 @@ async function polarSHEventsHandler(eventData) {
 
             if (updatedChannel) {
                 console.log(`Polar.sh webhook: Updated channel ${updatedChannel.name} (${channelID}) - premium: ${premium}, premium_plus: ${premium_plus} (Status: ${eventData.data.status})`);
+                
+                // Process referral reward for new active subscriptions
+                if ((eventData.type === 'subscription.created' || eventData.type === 'subscription.updated') 
+                    && eventData.data.status === 'active'
+                    && productId !== PRODUCT_IDS.FREE) {
+                    try {
+                        const customerId = eventData.data.customer_id || eventData.data.customer?.id;
+                        const subscriptionId = eventData.data.id;
+                        
+                        if (customerId && subscriptionId) {
+                            const reward = await processSubscriptionReward(customerId, productId, subscriptionId);
+                            if (reward) {
+                                console.log(`Polar.sh webhook: Referral reward processed - ${reward.amount} tokens to referrer ${reward.referrerId}`);
+                            }
+                        }
+                    } catch (referralError) {
+                        console.error('Polar.sh webhook: Error processing referral reward:', referralError.message);
+                    }
+                }
             } else {
                 console.error(`Polar.sh webhook: Channel not found for twitch_user_id: ${channelID}`);
             }

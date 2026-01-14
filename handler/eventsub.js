@@ -5,6 +5,7 @@ const eventsubSchema = require('../schema/eventsub')
 // Handlers
 const redeemHandler = require('../handler/redeem')
 const raidHandler = require('../handler/raid')
+const { parseAndHandleChatMessage } = require('../util/parsers/chatMessageParser')
 // Functions
 const resetRedemptionPrice = require('../redemption_functions/resetredemptioncost');
 const unVIPExpiredUser = require('../redemption_functions/unvipexpired');
@@ -119,6 +120,10 @@ async function eventsubHandler(subscriptionData, eventData) {
             break;
         case 'channel.cheer':
             cheerHandler(client, eventData, eventsubData, chatEnabled);
+            break;
+        case 'channel.chat.message':
+            // Use the adapter to parse EventSub format and call legacy message handler
+            await parseAndHandleChatMessage(eventData);
             break;
     }
 }

@@ -91,7 +91,7 @@ async function init() {
 
     client.on('message', async (channel, tags, message, self) => {
         if(self) return;
-        await messageHandler(client, channel.replace('#', ''), tags, message);
+        //await messageHandler(client, channel.replace('#', ''), tags, message);
     })
 }
 

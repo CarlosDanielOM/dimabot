@@ -16,6 +16,10 @@ const channelSchema = new schema({
     twitch_user_token_id: { type: String, default: null },
     up_to_date_twitch_permissions: { type: Boolean, default: true },
     polar_sh_customer_id: { type: String, default: null },
+    // Referral system fields
+    referrerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Channel', default: null }, // Who referred this user
+    referralCodeUsed: { type: String, default: null }, // Which specific code did they use
+    tokenBalance: { type: Number, default: 0 }, // Referral credits/tokens balance
     createdAt: { type: Date, default: Date.now },
     updatedAt: { type: Date, default: Date.now },
     refreshedAt: { type: Date, default: Date.now },
