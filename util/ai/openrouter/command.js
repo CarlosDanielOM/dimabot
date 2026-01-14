@@ -29,8 +29,8 @@ const MODELS = {
  * Kimi (Pro) needs more tokens to allow for "thinking" process.
  */
 const TOKEN_LIMITS = {
-    default: 500,
-    'moonshotai/kimi-k2-thinking:nitro': 5000
+    default: 1500,
+    'moonshotai/kimi-k2-thinking:nitro': 10000
 };
 
 // ============================================================================
