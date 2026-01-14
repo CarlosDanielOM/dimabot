@@ -1,0 +1,31 @@
+# API Documentation for LLM Sandbox
+# Each endpoint is separated by ###
+# Format:
+# METHOD URL
+# header: value
+# header: value
+# { body schema }
+
+GET https://api.domdimabot.com/channel/info
+content-type: application/json
+authorization: Bearer {{AUTH_TOKEN}}
+{}
+
+###
+
+POST https://api.domdimabot.com/command
+content-type: application/json
+authorization: Bearer {{AUTH_TOKEN}}
+{
+  name: string,
+  func: string,
+  message: string,
+  modsOnly: boolean
+}
+
+###
+
+GET https://api.domdimabot.com/viewers
+content-type: application/json
+authorization: Bearer {{AUTH_TOKEN}}
+{}
