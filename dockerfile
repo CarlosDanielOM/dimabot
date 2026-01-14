@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM node:24-alpine
 
 # ---------------------------------------------------------------------
 # 1. Install System Dependencies (Added Step)
@@ -6,7 +6,7 @@ FROM node:20-alpine
 # - python3 & py3-pip: Required to run twitch-dl
 # - ffmpeg: Required by twitch-dl to merge video segments
 # ---------------------------------------------------------------------
-RUN apk add --no-cache python3 py3-pip ffmpeg
+RUN apk add --no-cache python3 py3-pip ffmpeg build-base g++
 
 # ---------------------------------------------------------------------
 # 2. Install twitch-dl (Pinned Version)

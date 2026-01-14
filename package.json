@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "A Twitch Chat bot that will help with commands and moderation on stream",
   "main": "index.js",
+  "type": "module",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "nodemon src/server",
@@ -29,6 +30,7 @@
     "express": "^4.19.2",
     "gtts": "^0.2.1",
     "ioredis": "^5.4.1",
+    "isolated-vm": "^6.0.2",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.4.3",
     "mp3-duration": "^1.1.0",
