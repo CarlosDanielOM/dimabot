@@ -177,7 +177,7 @@ Provide a structured plan with clear steps.`;
             request: userRequest,
             plan: plan,
             error: null
-        }, true, channelID, 'sandbox-planning');
+        }, true, channelID, 'sandbox-planning', false);
         
         return { plan, error: null };
     } catch (error) {
@@ -329,7 +329,7 @@ ${plan}`;
             code: code,
             plan: plan,
             error: null
-        }, true, channelID, 'sandbox-generation');
+        }, true, channelID, 'sandbox-generation', false);
         
         // Clean up the code if it's wrapped in markdown code blocks
         code = code.replace(/^```(?:javascript|js)?\n?/i, '').replace(/\n?```$/i, '').trim();
@@ -341,59 +341,86 @@ ${plan}`;
     }
 }
 
-// ============================================================================
-// SANDBOX EXECUTION
-// ============================================================================
-
 /**
- * Executes code in the secure sandbox with proper environment variables.
- * 
+ * Executes code in the secure Deno sandbox.
  * @param {string} code - The JavaScript code to execute
  * @param {string} channelID - The channel ID
  * @param {object} streamer - Streamer object with token
- * @returns {Promise<object>} - Sandbox execution result
+ * @returns {Promise<object>} - Sandbox execution result formatted for Logger
  */
 async function executeSandbox(code, channelID, streamer) {
+    const startTime = Date.now();
+    
     try {
-        // Dynamic import for ESM sandbox module
-        const { runSandbox } = await import('../sandbox/sandbox.js');
+        // 1. Import the new Deno runner
+        // Note: Ensure sandbox.js exports 'executeAiCode'
+        const { executeAiCode } = require('../sandbox/sandbox.js'); 
         
-        // Prepare environment variables for the sandbox
+        // 2. Prepare environment variables
+        // We only pass what is strictly needed. 
+        // Deno handles security, so no policyPath needed.
         const sandboxEnv = {
             CHANNEL_ID: channelID,
             CHANNEL_NAME: streamer?.name || '',
-            AUTH_TOKEN: streamer?.token || ''
+            AUTH_TOKEN: streamer?.bot_token || '' // Ensure this matches your DB field
         };
 
-        // Get the policy path for endpoint validation
-        const policyPath = path.join(__dirname, '../sandbox/doc-llm.txt');
+        // 3. Execute
+        // We strip out memoryLimit/policyPath because Deno + p-limit handles that now.
+        const rawOutput = await executeAiCode(code, sandboxEnv);
 
-        // Execute in sandbox with timeout and memory limits
-        const result = await runSandbox(code, {
-            env: sandboxEnv,
-            policyPath: policyPath,
-            timeout: 30000,  // 30 second timeout
-            memoryLimit: 128 // 128MB memory limit
-        });
+        // 4. Parse the Result (Attempt to detect JSON vs Text)
+        // Your logger expects a 'result' object and 'logs' array.
+        // We try to parse the output as JSON for cleaner logging.
+        let parsedResult = rawOutput;
+        try {
+            parsedResult = JSON.parse(rawOutput);
+        } catch (e) {
+            // It's just plain text/logs
+            parsedResult = rawOutput; 
+        }
 
+        const resultObj = {
+            result: parsedResult,
+            logs: [typeof rawOutput === 'string' ? rawOutput : JSON.stringify(rawOutput)],
+            error: null,
+            executionTime: Date.now() - startTime,
+            timedOut: false
+        };
+
+        // 5. Log Success
         logger({
             type: 'sandbox-execution',
             channelID: channelID,
             code: code,
-            result: result,
+            result: resultObj.result,
             error: null
-        }, true, channelID, 'sandbox-execution');
+        }, true, channelID, 'sandbox-execution', false);
 
-        return result;
+        return resultObj;
+
     } catch (error) {
+        // 6. Log & Return Error
         console.error('[Router] Sandbox execution error:', error);
-        return {
+        
+        const errorResult = {
             result: null,
             logs: [],
             error: error.message,
-            executionTime: 0,
-            timedOut: false
+            executionTime: Date.now() - startTime,
+            timedOut: error.message.includes('Timed Out')
         };
+
+        // Log the failure too so you can debug AI crashes
+        logger({
+            type: 'sandbox-execution',
+            channelID: channelID,
+            code: code,
+            result: null,
+            error: error.message
+        }, true, channelID, 'sandbox-execution', false);
+
+        return errorResult;
     }
 }
 
@@ -564,7 +591,7 @@ async function router(channelID, message, preset = '@preset/router', history = [
                     model: codingModel,
                     hadPlan: !!plan,
                     phase: 'generation'
-                }, true, channelID, 'sandbox');
+                }, true, channelID, 'sandbox', false);
 
                 toolContext.push({
                     name: 'code_execution',
@@ -598,7 +625,7 @@ async function router(channelID, message, preset = '@preset/router', history = [
                     success: !sandboxResult.error && !sandboxResult.timedOut,
                     model: codingModel,
                     hadPlan: !!plan
-                }, true, channelID, 'sandbox');
+                }, true, channelID, 'sandbox', false);
 
                 // Build the tool context with execution results
                 toolContext.push({
@@ -637,7 +664,7 @@ async function router(channelID, message, preset = '@preset/router', history = [
                 model: codingModel,
                 hadPlan: !!plan,
                 phase: 'unknown'
-            }, true, channelID, 'sandbox');
+            }, true, channelID, 'sandbox', false);
 
             toolContext.push({
                 name: 'code_execution',

@@ -33,7 +33,6 @@ const formatBadges = require('../util/badges');
 const router = require('../util/ai/openrouter/router');
 
 async function message(client, channel, tags, message) {
-    
     let streamer = await STREAMERS.getStreamerByName(channel);
     let channelID = streamer.user_id;
 
@@ -81,7 +80,7 @@ async function message(client, channel, tags, message) {
         if(message.startsWith('@domdimabot') || message.startsWith('@DomDimaBot') || message.includes('@domdimabot') || message.includes('@DomDimaBot')) {
             let aiInput = message.replace('@domdimabot', '');
 
-            if(channel == 'ozbellvt') return;
+            if(channel == 'ozbellvt' || channel == 'littlehuntervt') return;
 
             // Get recent messages based on channel tier
             const recentMessages = await chatHistory.getRecentMessages(channelID, streamer.premium_plus ? 15 : 7);

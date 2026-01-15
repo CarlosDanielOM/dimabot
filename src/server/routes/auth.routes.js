@@ -16,7 +16,7 @@ const JSONCOMMANDS = require('../../../config/reservedcommands.json')
 const { incrementSiteAnalytics } = require('../../../util/siteanalytics');
 
 const auth = require("../../../middleware/auth");
-const { ingestPolarSHEvent } = require('../../../util/polarsh');
+const { ingestPolarSHEvent, getPolarShClient } = require('../../../util/polarsh');
 
 router.get('/register', async (req, res) => {
     const token = req.query.code;
@@ -314,6 +314,107 @@ router.post('/login', auth, async (req, res) => {
     }
 })
 
+router.post('/mock-register', async (req, res) => {
+    const token = req.query.code;
+    const username = req.query.state;
+    try {
 
+    let updatedChannel = null;
+
+    updatedChannel = await channelSchema.findOne({name: username});
+
+    if(!updatedChannel) return res.status(400).send({error: true, message: 'Channel not found'});
+
+        if (updatedChannel && !updatedChannel.actived && updatedChannel.polar_sh_customer_id) {
+            const ingestResult = await ingestPolarSHEvent({
+                customerId: updatedChannel.polar_sh_customer_id,
+                cost: -25,
+                reason: 'Free benefits',
+                mode: 'immediate'
+            });
+
+            if(ingestResult.error) {
+                logger(ingestResult, true, updatedChannel.twitch_user_id, 'auth_polarsh_ingest');
+            }
+        }
+
+        await STREAMERS.updateStreamers();
+        let streamer = await STREAMERS.getStreamerByName(username);
+
+        let addedModerator = await CHANNEL.addModerator(streamer.user_id);
+
+        if(addedModerator.error) {
+            if(addedModerator.message == 'user is already a mod') {
+                console.log({error: addedModerator});
+            } else {
+                logger(addedModerator, true, streamer.user_id, 'auth_moderator');
+                return res.status(addedModerator.status).send(addedModerator);
+            }
+        }
+
+        let eventDataSubscriptions = subcriptionsTypes
+
+        //? Subscribe to all event subscriptions
+        for(const subscription of eventDataSubscriptions) {
+            if(subscription.type == 'channel.raid') {
+                subscription.condition.to_broadcaster_user_id = streamer.user_id;
+            } else {
+                subscription.condition.broadcaster_user_id = streamer.user_id;
+            }
+
+            let response = await subscribeTwitchEvent(streamer.user_id, subscription.type, subscription.version, subscription.condition);
+
+            if(response.error) {
+                logger(response, true, streamer.user_id, 'auth_event_sub');
+            }
+        }
+
+        let jsonCommands = JSONCOMMANDS.commands;
+
+        //? Add all reserved commands to the channel
+        for(const command in jsonCommands) {
+            let commandExists = await commandSchema.exists({func: jsonCommands[command].func, channelID: streamer.user_id});
+
+            if(commandExists) {
+                console.log(`Command ${command} already exists in ${streamer.user_id}`);
+                continue;
+            }
+
+            let newCommand = new commandSchema({
+                name: jsonCommands[command].name,
+                cmd: jsonCommands[command].cmd,
+                func: jsonCommands[command].func,
+                type: jsonCommands[command].type,
+                channel: updatedChannel.name,
+                channelID: updatedChannel.twitch_user_id,
+                cooldown: jsonCommands[command].cooldown,
+                enabled: jsonCommands[command].enabled,
+                userLevel: jsonCommands[command].userLevel,
+                userLevelName: jsonCommands[command].userLevelName,
+                reserved: jsonCommands[command].reserved,
+            });
+
+            try {
+                await newCommand.save();
+            } catch (error) {
+                logger(error, true, streamer.user_id, 'auth_command');
+                return res.status(500).send('Internal server error');
+            }
+        }
+
+        // Increment active channels count when account is activated
+
+        // Return the login.html file (local development)
+        // return res.status(200).sendFile(path.join(__dirname, '../../../routes/public/login.html'));
+
+        // Redirect to the login page on the production domain (production environment)
+        return res.redirect(`https://domdimabot.com/login`);
+
+    } catch (error) {
+        logger(error, true, username, 'auth');
+        return res.status(500).send('Internal server error');
+    }
+
+});
 
 module.exports = router;
