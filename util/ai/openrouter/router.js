@@ -17,7 +17,7 @@ require('dotenv').config();
  * These models are optimized for generating executable code.
  */
 const CODING_MODELS = {
-    pro: 'z-ai/glm-4.7:nitro',
+    pro: 'google/gemini-2.5-flash-lite',
     premium: 'google/gemini-2.5-flash-lite',
     free: 'z-ai/glm-4.5-air:nitro',
     exhausted: 'z-ai/glm-4.5-air'
@@ -531,7 +531,7 @@ async function router(channelID, message, preset = '@preset/router', history = [
                 console.log(`[Router] Pro tier detected - generating code plan for channel ${channelID}`);
                 sendChatMessage(channelID, `@${tags.username} Creando el plan`);
 
-                const planResult = await generateCodePlan(channelID, userRequest, codingModel, streamer);
+                const planResult = await generateCodePlan(channelID, userRequest, 'openai/gpt-oss-120b', streamer);
                 
                 if (planResult.error) {
                     console.error('[Router] Plan generation failed:', planResult.error);

@@ -15,7 +15,7 @@ const DEFAULT_PERSONALITY = "You are a witty, helpful, and slightly sarcastic Tw
  * @param {string} userContext.username - The username of the person invoking the AI
  * @param {string} userContext.badges - Optional formatted badge string for the user
  * @param {string} promptText - The actual prompt/message text from the user
- * @param {string} mode - Either 'command' (for $(ai) one-off calls) or 'chat' (for @bot conversations)
+ * @param {string} mode - Either 'command' (for $(ai) one-off calls) or 'chat' (for bot conversations)
  * @returns {Array<{role: string, content: string}>} - Messages array ready for OpenRouter API
  */
 function constructSystemMessages(streamer, userContext, promptText, mode = 'command', language = 'spanish') {
