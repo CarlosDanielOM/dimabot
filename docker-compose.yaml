@@ -30,7 +30,7 @@ services:
     container_name: dima-bot
     command: node dist/bot/index.js
     restart: always
-    env_file: .env-bot
+    env_file: .env
     networks:
       - web-proxy
       - databases
@@ -49,7 +49,6 @@ services:
     command: npm run dev-all
     env_file:
       - .env
-      - .env-bot # Combining both env files for dev
     volumes:
       - .:/app
       - /app/node_modules # Don't overwrite container modules with local ones
