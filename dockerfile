@@ -33,11 +33,7 @@ ARG NODE_ENV=production
 ENV NODE_ENV=${NODE_ENV}
 
 # Install dependencies based on environment
-RUN if [ "$NODE_ENV" = "development" ]; then \
-      npm install; \
-    else \
-      npm ci --omit=dev; \
-    fi
+RUN npm install
 
 # ---------------------------------------------------------------------
 # 6. Source Code
