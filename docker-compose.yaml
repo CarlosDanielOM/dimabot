@@ -9,8 +9,8 @@ services:
         - SERVICE_NAME=server
         - NODE_ENV=production
     image: dimabot/api-server:latest
-    container_name: twitch-api
-    command: node src/server/index.js
+    container_name: dima-server
+    command: node dist/server/index.js
     restart: always
     env_file: .env
     networks:
@@ -28,7 +28,7 @@ services:
         - NODE_ENV=production
     image: dimabot/chat-bot:latest
     container_name: dima-bot
-    command: node src/bot/index.js
+    command: node dist/bot/index.js
     restart: always
     env_file: .env-bot
     networks:

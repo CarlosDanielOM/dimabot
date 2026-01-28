@@ -40,23 +40,14 @@ RUN if [ "$NODE_ENV" = "development" ]; then \
     fi
 
 # ---------------------------------------------------------------------
-# 5. Shared Code (Your Shared Layer)
-# ---------------------------------------------------------------------
-COPY class/ ./class/
-COPY command/ ./command/
-COPY config/ ./config/
-COPY function/ ./function/
-COPY handler/ ./handler/
-COPY handler_function/ ./handler_function/
-COPY middleware/ ./middleware/
-COPY redemption_functions/ ./redemption_functions/
-COPY schema/ ./schema/
-COPY timer_functions/ ./timer_functions/
-COPY util/ ./util/
-
-# ---------------------------------------------------------------------
 # 6. Source Code
 # ---------------------------------------------------------------------
-# We copy the entire src directory. This supports both individual 
+# We copy the entire src directory. This supports both individual
 # services (bot/server) and the combined 'dev-bot' service.
 COPY src/ ./src/
+
+# ---------------------------------------------------------------------
+# 7. Build the Project
+# ---------------------------------------------------------------------
+# Build the TypeScript project to JavaScript
+RUN npm run build
