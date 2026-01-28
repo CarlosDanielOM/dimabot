@@ -44,7 +44,7 @@ RUN if [ "$NODE_ENV" = "development" ]; then \
 # ---------------------------------------------------------------------
 # We copy the entire src directory. This supports both individual
 # services (bot/server) and the combined 'dev-bot' service.
-COPY src/ ./src/
+COPY . .
 
 # ---------------------------------------------------------------------
 # 7. Build the Project
