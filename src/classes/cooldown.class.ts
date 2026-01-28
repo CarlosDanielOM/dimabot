@@ -1,24 +1,26 @@
-class COOLDOWN {
+export class COOLDOWN {
+    private cooldowns: Map<string, number>;
+    
     constructor() {
         this.cooldowns = new Map();
     }
 
-    setCooldown(id, time) {
+    setCooldown(id: string, time: number) {
         this.cooldowns.set(id, time);
         setTimeout(() => {
             this.cooldowns.delete(id);
         }, time * 1000);
     }
 
-    getCooldown(id) {
+    getCooldown(id: string) {
         return this.cooldowns.get(id);
     }
 
-    hasCooldown(id) {
+    hasCooldown(id: string) {
         return this.cooldowns.has(id);
     }
 
-    deleteCooldown(id) {
+    deleteCooldown(id: string) {
         this.cooldowns.delete(id);
     }
 
@@ -29,7 +31,4 @@ class COOLDOWN {
     getCooldowns() {
         return this.cooldowns;
     }
-    
 }
-
-module.exports = COOLDOWN;

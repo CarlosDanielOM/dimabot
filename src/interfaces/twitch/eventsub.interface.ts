@@ -101,7 +101,7 @@ interface IReply {
     thread_user_login: string;
 }
 
-interface IChatMessage extends ITwitchEventBase {
+export interface IChatMessage extends ITwitchEventBase {
     message_id: string;
     message: IEventMessage;
     message_type: 'text' | 'channel_points_highlighted' | 'channel_points_sub_only' | 'user_intro' | 'power_ups_message_effect' | 'power_ups_gigantify_emote';
