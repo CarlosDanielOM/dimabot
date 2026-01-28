@@ -8,6 +8,7 @@
 require('dotenv').config();
 const { constructSystemMessages } = require('../prompts');
 const { getClient } = require('../../database/dragonfly');
+const { ingestPolarSHEvent } = require('../../polarsh');
 
 // ============================================================================
 // MODEL CONFIGURATION - Tiered Nitro Models
@@ -28,8 +29,8 @@ const MODELS = {
  * Kimi (Pro) needs more tokens to allow for "thinking" process.
  */
 const TOKEN_LIMITS = {
-    default: 500,
-    'moonshotai/kimi-k2-thinking:nitro': 5000
+    default: 1500,
+    'moonshotai/kimi-k2-thinking:nitro': 10000
 };
 
 // ============================================================================
@@ -109,9 +110,10 @@ function generateTimeLeftToNextMonthInSeconds() {
  * @param {string} userContext.username - Username of the person invoking the command
  * @param {string} userContext.badges - Optional formatted badge string
  * @param {string} prompt - The prompt text to send to the AI
+ * @param {string} reason - The reason for the AI command (default: 'commands')
  * @returns {Promise<{error: boolean, message: string}>} - Result object
  */
-async function executeAiCommand(streamer, userContext, prompt) {
+async function executeAiCommand(streamer, userContext, prompt, reason = 'commands') {
     const cacheClient = getClient();
     const channelID = streamer?.user_id;
     
@@ -142,7 +144,10 @@ async function executeAiCommand(streamer, userContext, prompt) {
     const body = {
         model: model,
         messages: messages,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        usage: {
+            include: true
+        }
     };
     
     try {
@@ -175,6 +180,7 @@ async function executeAiCommand(streamer, userContext, prompt) {
         
         // Track usage if available
         const usageData = data.usage;
+        let aiUsage = data.usage;
         if (usageData && channelID) {
             try {
                 await cacheClient.hincrby(`${channelID}:chatbot:usage`, 'total_tokens', usageData.total_tokens || 0);
@@ -194,6 +200,22 @@ async function executeAiCommand(streamer, userContext, prompt) {
                 console.error('Cache error tracking AI usage:', cacheError);
                 // Don't fail the request due to cache issues
             }
+        }
+
+        let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
+
+        if(streamer.polar_sh_customer_id) {
+            ingestPolarSHEvent({
+                customerId: streamer.polar_sh_customer_id,
+                channelID: channelID,
+                cost: actualCost,
+                reason: reason,
+                llm: {
+                    model: model,
+                    usage: aiUsage
+                },
+                mode: 'batch'
+            });
         }
         
         // CRITICAL: Sanitize output to prevent command injection

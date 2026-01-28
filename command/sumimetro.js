@@ -36,25 +36,11 @@ async function sumimetro(channelID, user, touser, commandName) {
     const lowerCaseUser = user.toLowerCase();
     const lowerCaseToUser = touser.toLowerCase();
 
-    let dominantValue = await cacheClient.get(`${channelID}:sumimetro:${lowerCaseUser}`);
-    if(dominantValue) {
-        let message = cmdMessage || `El usuario {user} el dia de hoy salio: {sumiso}% sumiso y {dominante}% dominante`;
-        let parsedMessage = parseMessage(message, 100 - dominantValue, dominantValue, user);
-        return {
-            error: false,
-            message: parsedMessage,
-            status: 200,
-            type: 'success'
-        }
-    }
-
-    await cacheClient.set(`${channelID}:sumimetro:${lowerCaseUser}`, dominant, 'EX', 72000);
-
     if(lowerCaseUser !== lowerCaseToUser) {
-        dominantValue = await cacheClient.get(`${channelID}:sumimetro:${lowerCaseToUser}`);
-        if(dominantValue) {
+        let targetDominantValue = await cacheClient.get(`${channelID}:sumimetro:${lowerCaseToUser}`);
+        if(targetDominantValue) {
             let message = cmdMessage || `El usuario {user} el dia de hoy salio: {sumiso}% sumiso y {dominante}% dominante`;
-            let parsedMessage = parseMessage(message, 100 - dominantValue, dominantValue, touser);
+            let parsedMessage = parseMessage(message, 100 - targetDominantValue, targetDominantValue, touser);
             return {
                 error: false,
                 message: parsedMessage,
@@ -70,6 +56,21 @@ async function sumimetro(channelID, user, touser, commandName) {
             }
         }
     }
+
+    let dominantValue = await cacheClient.get(`${channelID}:sumimetro:${lowerCaseUser}`);
+    if(dominantValue) {
+        let message = cmdMessage || `El usuario {user} el dia de hoy salio: {sumiso}% sumiso y {dominante}% dominante`;
+        let parsedMessage = parseMessage(message, 100 - dominantValue, dominantValue, user);
+        return {
+            error: false,
+            message: parsedMessage,
+            status: 200,
+            type: 'success'
+        }
+    }
+
+    await cacheClient.set(`${channelID}:sumimetro:${lowerCaseUser}`, dominant, 'EX', 72000);
+
 
     if(dominant > 50) {
         let supremeDominant = await cacheClient.hget(`${channelID}:sumimetro:dominant`, 'value');

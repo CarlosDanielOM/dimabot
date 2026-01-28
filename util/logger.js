@@ -1,6 +1,6 @@
 const { getClient } = require("./database/dragonfly");
 
-async function logger(data, cache = false, channelID = null, type = null) {
+async function logger(data, cache = false, channelID = null, type = null, showConsole = true) {
     let cacheClient = getClient();
 
     if(cache) {
@@ -9,7 +9,7 @@ async function logger(data, cache = false, channelID = null, type = null) {
         await cacheClient.expire(`logger:${channelID}:${type}:${uniqueID}`, 60 * 60 * 24 * 7);
     }
 
-    console.log({data, timestamp: new Date().toLocaleString('en-US', {timeZone: 'UTC'})})
+    if(showConsole) console.log({data, timestamp: new Date().toLocaleString('en-US', {timeZone: 'UTC'})})
     
 }
 

@@ -11,7 +11,7 @@ const STREAMERS = require('../../../class/streamer');
 const AIPersonality = require('../../../schema/channelAIPersonality');
 const formatBadges = require('../../badges');
 const { getClient } = require('../../database/dragonfly');
-const { getPolarShClient } = require('../../polarsh');
+const { ingestPolarSHEvent } = require('../../polarsh');
 const { constructChatSystemMessages } = require('../prompts');
 
 // ============================================================================
@@ -33,8 +33,8 @@ const MODELS = {
  * Kimi (Pro) needs more tokens to allow for "thinking" process.
  */
 const TOKEN_LIMITS = {
-    default: 500,
-    'moonshotai/kimi-k2-thinking:nitro': 5000
+    default: 1500,
+    'moonshotai/kimi-k2-thinking:nitro': 10000
 };
 
 // ============================================================================
@@ -172,8 +172,12 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
         ]
     };
     
+    // Check if user has exhausted AI credits - force free model if so
+    const isExhausted = await cacheClient.exists(`${channelID}:ai:exhaust`);
+    
     // Select model based on streamer tier if not explicitly provided
-    const selectedModel = model || selectModel(streamer);
+    // Override to free model if credits are exhausted
+    const selectedModel = isExhausted ? MODELS.free : (model || selectModel(streamer));
     const maxTokens = getTokenLimit(selectedModel);
     
     // Build user context from Twitch tags
@@ -274,67 +278,18 @@ async function AiResponse(channelID, message, model = null, context = [], tags =
         }
 
         let actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
-        
-        let storedEvents = await cacheClient.get(`${channelID}:ai:polarshevent`);
-        let ingestData = [];
-        try {
-            ingestData = storedEvents ? JSON.parse(storedEvents) : [];
-        } catch (e) {
-            console.error('Failed to parse stored AI events:', e);
-            ingestData = [];
-        }
-
-        let provider = selectedModel.split('/')[0];
-        let actualModel = selectedModel.split('/')[1];
-        let modelName = actualModel.split(':')[0];
 
         if(streamer.polar_sh_customer_id) {
-            // Round to avoid floating point precision issues and truncate to max digits
-            let amountValue = Math.round(actualCost * 100 * 1e10) / 1e10; // Round to 10 decimal places
-            let amountStr = amountValue.toString();
-            if (amountStr.length > 17) {
-                amountStr = amountStr.substring(0, 17);
-                amountValue = parseFloat(amountStr);
-            }
-            
-            let costValue = Math.round(actualCost * 100 * 1e8) / 1e8; // Round to 8 decimal places
-            let costStr = costValue.toString();
-            if (costStr.length > 12) {
-                costStr = costStr.substring(0, 12);
-                costValue = parseFloat(costStr);
-            }
-        
-            let eventData = {
-                name: 'ai_usage',
+            ingestPolarSHEvent({
                 customerId: streamer.polar_sh_customer_id,
-                metadata: {
-                    _cost: {
-                        "amount": amountValue,
-                        "currency": "usd"
-                    },
-                    _llm: {
-                        vendor: provider,
-                        model: modelName,
-                        inputTokens: aiUsage?.prompt_tokens || 0,
-                        outputTokens: aiUsage?.completion_tokens || 0,
-                        totalTokens: aiUsage?.total_tokens || 0,
-                    },
-                    cost: costValue,
-                    currency: 'usd',
-                    reason: 'messages'
-                }
-            }
-
-            ingestData.push(eventData);
-
-            let polarshClient = getPolarShClient();
-
-            polarshClient.events.ingest({
-                events: ingestData
-            }).then(() => {
-                cacheClient.del(`${channelID}:ai:polarshevent`);
-            }).catch((error) => {
-                console.error('PolarSH ingest error:', error);
+                channelID: channelID,
+                cost: actualCost,
+                reason: 'messages',
+                llm: {
+                    model: selectedModel,
+                    usage: aiUsage
+                },
+                mode: 'batch'
             });
         }
 
