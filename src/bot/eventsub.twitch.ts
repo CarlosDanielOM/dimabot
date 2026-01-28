@@ -1,8 +1,8 @@
 import crypto from 'crypto';
-import express from 'express';
+import express, { type Express } from 'express';
 
 export const twitchEventsub = () => {
-    const app = express();
+    const app = express() as Express;
     const port = 3333;
 
     const TWITCH_MESSAGE_ID = 'Twitch-Eventsub-Message-Id'.toLocaleLowerCase();
