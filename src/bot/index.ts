@@ -3,8 +3,10 @@ import path from 'path';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+console.log(process.env.NODE_ENV ?? 'No NODE_ENV found');
 if(isDev) {
     dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+    console.log('Loaded .env.local');
 }
 
 dotenv.config({ path: path.resolve(process.cwd(), '.env') });
@@ -21,6 +23,7 @@ import ChatHistory from '../classes/chat_history.js';
 
 await getDragonflyClient('Bot');
 await getMongoDBConnection('Bot');
+await getQdrantConnection('Bot');
 await TwitchStreamers.getTwitchAccountsFromDB();
 
 twitchEventsub();
