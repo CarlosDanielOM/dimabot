@@ -87,7 +87,7 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
             };
 
             if (cache) {
-                await cacheClient.set(cacheKey, JSON.stringify(emptyResult), { EX: 300 });
+                await cacheClient.set(cacheKey, JSON.stringify(emptyResult), { EX: 7200 });
             }
 
             return emptyResult;
@@ -113,7 +113,7 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
         };
 
         if (cache) {
-            await cacheClient.set(cacheKey, JSON.stringify(result), { EX: 300 });
+            await cacheClient.set(cacheKey, JSON.stringify(result), { EX: 7200 });
         }
 
         return result;
