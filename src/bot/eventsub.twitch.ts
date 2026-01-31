@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
+import { eventsubHandler } from '../handlers/eventsub.handler.js';
+import type { ITwitchEventData, ITwitchSubscriptionData } from '../interfaces/twitch/eventsub.interface.js';
 
 export const twitchEventsub = () => {
     const app = express();
@@ -34,7 +36,7 @@ export const twitchEventsub = () => {
 
             if (MESSAGE_TYPE_NOTIFICATION === req.headers[MESSAGE_TYPE]) {
                 //* TODO: Add eventsub handler
-                // eventsubHandler(notification.subscription, notification.event);
+                eventsubHandler(notification.subscription as ITwitchSubscriptionData, notification.event as ITwitchEventData);
 
                 res.sendStatus(204);
             } else if (MESSAGE_TYPE_VERIFICATION === req.headers[MESSAGE_TYPE]) {

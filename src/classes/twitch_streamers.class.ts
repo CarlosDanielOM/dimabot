@@ -40,7 +40,8 @@ class TwitchStreamers {
                 };
 
                 cache.hSet(`accounts:${twitchAccount!.type}:${twitchAccount!.id}:data`, twitchAccountCache as Record<string, any>);
-                
+
+                cache.sAdd(`streamers:by:id`, twitchAccount!.id);
             }
             
             console.log('Accounts added to cache');
@@ -62,6 +63,16 @@ class TwitchStreamers {
         } catch (error) {
             console.error(`Error getting Twitch account by ID: ${error}`);
             return null;
+        }
+    }
+
+    async getTwitchStreamers(): Promise<string[]> {
+        try {
+            const cache = await this.cachePromise;
+            return await cache.sMembers(`streamers:by:id`);
+        } catch (error) {
+            console.error(`Error getting Twitch streamers: ${error}`);
+            return [];
         }
     }
 

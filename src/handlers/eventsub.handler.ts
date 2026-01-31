@@ -1,8 +1,9 @@
 import ChatHistory from "../classes/chat_history.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
-import type { ITwitchEventData, ITwitchSubscriptionData } from "../interfaces/twitch/eventsub.interface.js";
+import type { IChatMessage, ITwitchEventData, ITwitchSubscriptionData } from "../interfaces/twitch/eventsub.interface.js";
 import EventsubSchema, { type IEventsub } from "../schemas/eventsub.schema.js";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
+import { messageHandler } from "./message.handler.js";
 //* TODO Redeem handler
 //* TODO Raid handler
 //* TODO Functions
@@ -60,6 +61,7 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
 
     switch(type) {
         case 'channel.chat.message':
+            messageHandler(STREAMER.id, eventData as IChatMessage);
             break;
     }
 }
