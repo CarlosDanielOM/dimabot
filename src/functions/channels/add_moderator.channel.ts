@@ -1,5 +1,7 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
+import { getTwitchUserById } from '../users/index.js';
 
 interface AddModeratorResponse {
     status: number;
@@ -46,6 +48,44 @@ export async function addModerator(channelID: string, userID: string = '69861411
                 error: errorData.error,
                 type: 'error'
             };
+        }
+
+        const userInfo = await getTwitchUserById(userID);
+
+        if (!userInfo.error && userInfo.data) {
+            const cacheClient = await getDragonflyClient('addModerator');
+            const jsonCacheKey = `twitch:${channelID}:moderators`;
+            const idsCacheKey = `twitch:${channelID}:moderators:ids`;
+            const loginsCacheKey = `twitch:${channelID}:moderators:logins`;
+            const mappingCacheKey = `twitch:${channelID}:moderators:mapping`;
+
+            const cachedJson = await cacheClient.get(jsonCacheKey);
+
+            if (cachedJson) {
+                const parsedData = JSON.parse(cachedJson);
+
+                const newMod = {
+                    user_id: userInfo.data.id,
+                    user_login: userInfo.data.login,
+                    user_name: userInfo.data.display_name
+                };
+
+                parsedData.data.push(newMod);
+                parsedData.ids.push(userInfo.data.id);
+                parsedData.logins.push(userInfo.data.login);
+                parsedData.displayNames.push(userInfo.data.display_name);
+
+                await cacheClient.set(jsonCacheKey, JSON.stringify(parsedData), { EX: 7200 });
+
+                await cacheClient.sAdd(idsCacheKey, userInfo.data.id);
+                await cacheClient.expire(idsCacheKey, 7200);
+
+                await cacheClient.sAdd(loginsCacheKey, userInfo.data.login);
+                await cacheClient.expire(loginsCacheKey, 7200);
+
+                await cacheClient.hSet(mappingCacheKey, { [userInfo.data.login]: userInfo.data.id });
+                await cacheClient.expire(mappingCacheKey, 7200);
+            }
         }
 
         return {

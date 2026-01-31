@@ -23,6 +23,10 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
         const cacheClient = await getDragonflyClient('getChannelModerators');
         const cacheKey = `twitch:${channelID}:moderators`;
 
+        const idsCacheKey = `twitch:${channelID}:moderators:ids`;
+        const loginsCacheKey = `twitch:${channelID}:moderators:logins`;
+        const mappingCacheKey = `twitch:${channelID}:moderators:mapping`;
+
         if (cache) {
             const cachedData = await cacheClient.get(cacheKey);
             if (cachedData) {
@@ -88,6 +92,9 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
 
             if (cache) {
                 await cacheClient.set(cacheKey, JSON.stringify(emptyResult), { EX: 7200 });
+                await cacheClient.del(idsCacheKey);
+                await cacheClient.del(loginsCacheKey);
+                await cacheClient.del(mappingCacheKey);
             }
 
             return emptyResult;
@@ -96,11 +103,13 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
         const ids: string[] = [];
         const logins: string[] = [];
         const displayNames: string[] = [];
+        const mapping: Record<string, string> = {};
 
         for (const mod of moderators) {
             ids.push(mod.user_id);
             logins.push(mod.user_login);
             displayNames.push(mod.user_name);
+            mapping[mod.user_login] = mod.user_id;
         }
 
         const result = {
@@ -114,6 +123,25 @@ export async function getChannelModerators(channelID: string, userIDs: string[] 
 
         if (cache) {
             await cacheClient.set(cacheKey, JSON.stringify(result), { EX: 7200 });
+
+            await cacheClient.del(idsCacheKey);
+            await cacheClient.del(loginsCacheKey);
+            await cacheClient.del(mappingCacheKey);
+
+            if (ids.length > 0) {
+                await cacheClient.sAdd(idsCacheKey, ids as any);
+                await cacheClient.expire(idsCacheKey, 7200);
+            }
+
+            if (logins.length > 0) {
+                await cacheClient.sAdd(loginsCacheKey, logins as any);
+                await cacheClient.expire(loginsCacheKey, 7200);
+            }
+
+            if (Object.keys(mapping).length > 0) {
+                await cacheClient.hSet(mappingCacheKey, mapping);
+                await cacheClient.expire(mappingCacheKey, 7200);
+            }
         }
 
         return result;
