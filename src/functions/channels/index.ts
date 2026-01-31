@@ -1,1 +1,12 @@
 export { addModerator } from './add_moderator.channel.js';
+export { addChannelVIP } from './add_vip.channel.js';
+export { getChannelEditors } from './get_editors.channel.js';
+export { getTwitchFollowers } from './get_followers.channel.js';
+export { getChannelInformation } from './get_information.channel.js';
+export { getChannelSubscriptions } from './get_subs.channel.js';
+export { isLive, liveChannels } from './is_live.channel.js';
+export { raid } from './raid.channel.js';
+export { removeChannelModerator } from './remove_moderator.channel.js';
+export { removeChannelVIP } from './remove_vip.channel.js';
+export { setChannelInformation } from './set_information.channel.js';
+export { unraid } from './unraid.channel.js';

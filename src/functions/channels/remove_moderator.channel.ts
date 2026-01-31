@@ -1,23 +1,23 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
-interface AddModeratorResponse {
-    status: number;
+interface RemoveModeratorResponse {
+    error: boolean;
     message: string;
-    error?: string;
+    status?: number;
     type?: string;
 }
 
-export async function addModerator(channelID: string, userID: string = '698614112'): Promise<AddModeratorResponse> {
+export async function removeChannelModerator(channelID: string, userID: string): Promise<RemoveModeratorResponse> {
     try {
         const streamerHeaderResult = await getTwitchStreamerHeaderById(channelID);
 
         if (streamerHeaderResult.error || !streamerHeaderResult.header) {
             return {
-                status: 403,
+                error: true,
                 message: streamerHeaderResult.message,
-                error: 'permission_error',
-                type: 'error'
+                status: 403,
+                type: 'permission_error'
             };
         }
 
@@ -27,33 +27,33 @@ export async function addModerator(channelID: string, userID: string = '69861411
         params.append('broadcaster_id', channelID);
         params.append('user_id', userID);
 
-        const headers: Record<string, string> = {
-            'Client-Id': streamerHeader['Client-Id'],
-            'Authorization': streamerHeader.Authorization,
-            'Content-Type': streamerHeader['Content-Type']
-        };
-
         const response = await fetch(getTwitchHelixUrl('moderation/moderators', params.toString()), {
-            method: 'POST',
-            headers: headers,
+            method: 'DELETE',
+            headers: {
+                'Client-Id': streamerHeader['Client-Id'],
+                'Authorization': streamerHeader.Authorization,
+                'Content-Type': streamerHeader['Content-Type']
+            }
         });
 
         if (response.status !== 204) {
             const errorData = await response.json();
             return {
-                status: response.status,
-                message: errorData.message || 'Failed to add moderator',
-                error: errorData.error,
-                type: 'error'
+                error: true,
+                message: errorData.message,
+                status: errorData.status,
+                type: errorData.error
             };
         }
 
         return {
+            error: false,
+            message: 'Moderator removed',
             status: 200,
-            message: 'Success'
+            type: 'success'
         };
     } catch (error) {
-        console.error(`Error in addModerator:`, {
+        console.error(`Error in removeChannelModerator:`, {
             channelID,
             userID,
             error: error instanceof Error ? error.message : String(error),
@@ -62,9 +62,8 @@ export async function addModerator(channelID: string, userID: string = '69861411
         });
 
         return {
-            status: 500,
+            error: true,
             message: 'Internal server error',
-            error: String(error),
             type: 'error'
         };
     }

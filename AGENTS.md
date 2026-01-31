@@ -97,6 +97,120 @@ User: "YOU JUST DELETED MY DATA!"
 
 ---
 
+## Migration Conventions
+
+### File Naming Convention
+- **Pattern:** `what_the_file_is.parent_folder.ts`
+- **Examples:**
+  - `add_vip.channel.ts` (for VIP management)
+  - `get_editors.channel.ts` (for channel editors)
+  - `send_message.chat.ts` (for chat messages)
+
+### Dependency Mapping
+
+When migrating from JavaScript to TypeScript:
+
+| Old Dependency | New Dependency | Location |
+|---------------|----------------|----------|
+| `getStreamerHeaderById()` | `getTwitchStreamerHeaderById()` | `src/utils/header.ts` |
+| `getBotHeader()` | `getTwitchAppHeader()` | `src/utils/header.ts` |
+| `getTwitchHelixUrl()` | `getTwitchHelixUrl()` | `src/utils/links.ts` |
+| `getClient()` | `getDragonflyClient()` | `src/utils/databases/dragonfly.database.ts` |
+| `STREAMERS.getStreamerById()` | `TwitchStreamers.getTwitchAccountById()` | `src/classes/twitch_streamers.class.ts` |
+| `STREAMERS.getStreamerIds()` | `TwitchStreamers.getTwitchStreamers()` | `src/classes/twitch_streamers.class.ts` |
+| `getAppToken()` | `getAppToken()` | `src/utils/tokens.ts` |
+
+### Code Style Guidelines
+
+1. **Named Exports** - Always use named exports for functions
+2. **TypeScript Interfaces** - Define interfaces for function parameters and return types
+3. **Error Handling** - Follow the pattern: `{ error: boolean, message: string, ... }`
+4. **Cache Operations** - Use `getDragonflyClient()` from dragonfly.database.ts
+5. **Response Format** - Maintain consistent response structure with old functions
+
+### Error Handling and Logging
+
+**User-Facing Errors:**
+- Return clear, user-friendly error messages in response objects
+- Use `message` field for errors that users should see
+- Keep error messages concise and actionable
+
+**Developer-Facing Logging:**
+- Always log detailed error information using `console.error()`
+- Include context: function name, parameters, error object, stack trace
+- Log the full error object for debugging purposes
+
+**Example Pattern:**
+
+```typescript
+export async function exampleFunction(param: string): Promise<Response> {
+    try {
+        // implementation
+    } catch (error) {
+        console.error(`Error in exampleFunction:`, {
+            param,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+
+        return {
+            error: true,
+            message: 'Failed to complete operation'
+        };
+    }
+}
+```
+
+**Guidelines:**
+- User messages: Simple, non-technical, action-oriented
+- Developer logs: Full context, error details, timestamps
+- Always log before returning error responses
+- Use structured logging (objects) when possible
+
+### Example Migration Pattern
+
+```typescript
+// Old JavaScript
+async function addChannelVIP(channelID, userID) {
+    let streamerHeader = await getStreamerHeaderById(channelID);
+    // ... implementation
+}
+
+// New TypeScript
+import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { getTwitchHelixUrl } from '../../utils/links.js';
+
+interface AddVipResponse {
+    error: boolean;
+    message: string;
+    status?: number;
+    type?: string;
+}
+
+export async function addChannelVIP(channelID: string, userID: string): Promise<AddVipResponse> {
+    try {
+        const streamerHeader = await getTwitchStreamerHeaderById(channelID);
+        // ... implementation
+    } catch (error) {
+        return {
+            error: true,
+            message: 'Internal server error',
+            type: 'error'
+        };
+    }
+}
+```
+
+### Index File Updates
+
+When creating new function files:
+1. Update the corresponding `index.ts` file to export new functions
+2. Use ES module syntax with `.js` extensions for imports
+3. Maintain alphabetical or logical ordering
+
+---
+
 ## Git Operations
 
 ### ✅ ALLOWED

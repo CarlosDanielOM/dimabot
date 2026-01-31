@@ -2,6 +2,7 @@ import type { ITwitchEventData } from '../interfaces/twitch/eventsub.interface.j
 import Commands from '../classes/command.class.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import * as ChannelFunctions from '../functions/channels/index.js';
+import * as ChatFunctions from '../functions/chats/index.js';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -444,7 +445,11 @@ async function resolveCommandSwitch(
         }
 
         case 'randomuser':
+            return '⚠️ This feature is being implemented';
+
         case 'vip':
+            return '⚠️ This feature is being implemented';
+
         case 'ban':
             return '⚠️ This feature is being implemented';
 
@@ -466,17 +471,75 @@ async function resolveCommandSwitch(
             return String(currentCount);
         }
 
-        case 'twitch.subs':
-        case 'twitch.title':
-        case 'twitch.game':
+        case 'twitch.subs': {
+            const result = await ChannelFunctions.getChannelSubscriptions(channelID);
+            if (result.error) {
+                return `Error fetching subscribers: ${result.message}`;
+            }
+            return String(result.total || 0);
+        }
+
+        case 'twitch.title': {
+            const result = await ChannelFunctions.getChannelInformation(channelID);
+            if (result.error) {
+                return `Error fetching channel title: ${result.message}`;
+            }
+            return result.data?.title || 'No title set';
+        }
+
+        case 'twitch.game': {
+            const result = await ChannelFunctions.getChannelInformation(channelID);
+            if (result.error) {
+                return `Error fetching game: ${result.message}`;
+            }
+            return result.data?.game_name || 'No game set';
+        }
+
         case 'twitch.viewers':
-        case 'twitch.follows':
+            return '⚠️ This feature is being implemented';
+
+        case 'twitch.follows': {
+            const result = await ChannelFunctions.getTwitchFollowers(channelID);
+            if (result.error) {
+                return `Error fetching followers: ${result.message}`;
+            }
+            return String(result.total || 0);
+        }
+
         case 'set.game':
-        case 'set.title':
+            return '⚠️ This feature is being implemented';
+
+        case 'set.title': {
+            const newTitle = args[0] || '';
+            if (!newTitle) {
+                return 'Usage: $(set.title new title)';
+            }
+            const result = await ChannelFunctions.setChannelInformation(channelID, { title: newTitle });
+            if (result.error) {
+                return `Error setting title: ${result.message}`;
+            }
+            await ChatFunctions.sendTwitchChatMessage(channelID, `Title updated to: ${newTitle}`);
+            return '';
+        }
+
         case 'start.prediction':
+            return '⚠️ This feature is being implemented';
+
         case 'start.poll':
+            return '⚠️ This feature is being implemented';
+
         case 'raid':
-        case 'unraid':
+            return '⚠️ This feature is being implemented';
+
+        case 'unraid': {
+            const result = await ChannelFunctions.unraid(channelID);
+            if (result.error) {
+                return `Error cancelling raid: ${result.message}`;
+            }
+            await ChatFunctions.sendTwitchChatMessage(channelID, 'Raid cancelled!');
+            return '';
+        }
+
         case 'ai':
             return '⚠️ This feature is being implemented';
 

@@ -3,9 +3,12 @@ import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import UsersSchema, { type IUsers } from "../schemas/users.schema.js";
 import { decrypt, encrypt } from "./crypto.js";
 import { getTwitchOAuthUrl } from "./links.js";
+import { notifyDevelopers } from "./notifications.js";
 
+const BOT_USER_ID = '698614112';
 let count = 0;
 
+// @deprecated This function is deprecated. Tokens are now refreshed automatically when needed via smart refresh system.
 export const refreshAllTokens = async () => {
     count++;
     const cache = await getDragonflyClient('Tokens');
@@ -22,9 +25,9 @@ export const refreshAllTokens = async () => {
                 return null;
             }
 
-            const { encryptedToken, encryptedRefreshToken } = await refreshTwitchToken(account.refresh_token);
+            const refreshResult = await refreshTwitchToken(account.refresh_token, account.id);
 
-            if(!encryptedToken || !encryptedRefreshToken) {
+            if(!refreshResult.token) {
                 let nullToken = {
                     iv: null,
                     content: null
@@ -45,12 +48,15 @@ export const refreshAllTokens = async () => {
                 return console.error(`Error refreshing token for ${account.id} ${account.name}, token is null, deactivating channel`);
             }
 
-            account.access_token = decrypt(encryptedToken)!;
-            account.refresh_token = decrypt(encryptedRefreshToken)!;
+            account.access_token = refreshResult.token!;
+            account.refresh_token = refreshResult.refreshToken!;
 
             await cache.hSet(`accounts:twitch:${account.id}:data`, 'refresh_token', account.refresh_token);
 
             await cache.hSet(`accounts:twitch:${account.id}:data`, 'access_token', account.access_token);
+
+            const encryptedToken = encrypt(account.access_token);
+            const encryptedRefreshToken = encrypt(account.refresh_token);
 
             await UsersSchema.findOneAndUpdate({'accounts.id': account.id}, {$set: {'accounts.$.refresh_token': encryptedRefreshToken, 'accounts.$.access_token': encryptedToken}})
         } catch (error) {
@@ -60,22 +66,16 @@ export const refreshAllTokens = async () => {
     });
 }
 
-export const refreshTwitchToken = async (refresh_token: string, independent = false, userId = null) => {
-    if(!userId && independent) {
-        console.log({refresh_token, independent, userId});
-        return {
-            encryptedToken: null,
-            encryptedRefreshToken: null
-        }
-    }
-
+export const refreshTwitchToken = async (refresh_token: string, user_id: string) => {
     try {
         const cache = await getDragonflyClient('Tokens');
+        
+        // URL encode the refresh token to handle special characters
         const params = new URLSearchParams({
             client_id: process.env.CLIENT_ID!,
             client_secret: process.env.CLIENT_SECRET!,
             grant_type: 'refresh_token',
-            refresh_token: refresh_token
+            refresh_token: encodeURIComponent(refresh_token)
         });
 
         const twitchRefreshResponse = await fetch(getTwitchOAuthUrl('token', params.toString()), {
@@ -87,50 +87,92 @@ export const refreshTwitchToken = async (refresh_token: string, independent = fa
 
         const refreshTokenData = await twitchRefreshResponse.json();
 
-        if(refreshTokenData.status === 400) {
-            console.error(`Error refreshing Twitch token for ${userId}: ${refreshTokenData.message}`);
+        if (refreshTokenData.status === 400 || refreshTokenData.error) {
+            console.error(`Error refreshing Twitch token for ${user_id}: ${refreshTokenData.message}`);
+
+            // Set tokens to empty in cache
+            await cache.hSet(`accounts:twitch:${user_id}:data`, 'access_token', '');
+            await cache.hSet(`accounts:twitch:${user_id}:data`, 'refresh_token', '');
+            await cache.hSet(`accounts:twitch:${user_id}:data`, 'has_permissions', 'false');
+            await cache.hSet(`accounts:twitch:${user_id}:data`, 'up_to_date_permissions', 'false');
+
+            // Set tokens to null in database
+            const nullToken = {
+                iv: null,
+                content: null
+            };
+            await UsersSchema.findOneAndUpdate(
+                { 'accounts.id': user_id },
+                { 
+                    $set: { 
+                        'accounts.$.refresh_token': nullToken,
+                        'accounts.$.access_token': nullToken,
+                        'accounts.$.has_permissions': false,
+                        'accounts.$.up_to_date_permissions': false
+                    }
+                }
+            );
+
             return {
-                encryptedToken: null,
-                encryptedRefreshToken: null
-            }
+                token: null,
+                refreshToken: null,
+                expiresIn: null
+            };
         }
-        
+
         const token = refreshTokenData.access_token;
         const refreshToken = refreshTokenData.refresh_token;
+        const expiresIn = refreshTokenData.expires_in || 7200;
 
         const encryptedToken = encrypt(token);
         const encryptedRefreshToken = encrypt(refreshToken);
-        
-        if(independent) {
-            let userDoc = await UsersSchema.findOne({'accounts.id': userId}) as IUsers;
-            if(!userDoc) {
-                console.error(`User not found for ${userId}`);
-                return {
-                    encryptedToken: null,
-                    encryptedRefreshToken: null
+
+        // Update database
+        const userDoc = await UsersSchema.findOne({ 'accounts.id': user_id }) as IUsers;
+        if (!userDoc) {
+            console.error(`User not found for ${user_id}`);
+            return {
+                token: null,
+                refreshToken: null,
+                expiresIn: null
+            };
+        }
+
+        await UsersSchema.findOneAndUpdate(
+            { 'accounts.id': user_id },
+            { 
+                $set: { 
+                    'accounts.$.refresh_token': encryptedRefreshToken, 
+                    'accounts.$.access_token': encryptedToken 
                 }
             }
+        );
 
-            await UsersSchema.findOneAndUpdate({'accounts.id': userId}, {$set: {'accounts.$.refresh_token': encryptedRefreshToken, 'accounts.$.access_token': encryptedToken}});
-
-            cache.hSet(`${userId}:streamer:data`, 'token', token);
-            cache.hSet(`${userId}:streamer:data`, 'refresh_token', refreshToken);
-
-            return { token }
-        }
+        // Update cache with correct key
+        await cache.hSet(`accounts:twitch:${user_id}:data`, 'access_token', token);
+        await cache.hSet(`accounts:twitch:${user_id}:data`, 'refresh_token', refreshToken);
+        
+        // Store expiration timestamp (access_token expires, refresh_token doesn't)
+        const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+        await cache.hSet(`accounts:twitch:${user_id}:data`, 'expires_at', String(expiresAt));
+        
+        // Set TTL on the entire hash (expires_in seconds + 5 minute buffer)
+        await cache.expire(`accounts:twitch:${user_id}:data`, expiresIn + 300);
 
         return {
-            encryptedToken,
-            encryptedRefreshToken
-        }
+            token,
+            refreshToken,
+            expiresIn
+        };
     } catch (error) {
-        console.error(`Error refreshing Twitch token for ${userId}: ${error}`);
+        console.error(`Error refreshing Twitch token for ${user_id}: ${error}`);
         return {
-            tokenEncrypt: null,
-            refreshTokenEncrypt: null
-        }
+            token: null,
+            refreshToken: null,
+            expiresIn: null
+        };
     }
-}
+};
 
 export const getNewTwitchAppToken = async () => {
     try {
@@ -181,3 +223,53 @@ export const getAppToken = async (platform: 'twitch' | 'youtube' | 'kick' | 'tik
         return null;
     }
 }
+
+export const getBotToken = async (): Promise<string | null> => {
+    try {
+        const cache = await getDragonflyClient('Tokens');
+        
+        // Check cache first
+        const cachedToken = await cache.hGet('app:twitch:bot', 'access_token');
+        const cachedExpiresAt = await cache.hGet('app:twitch:bot', 'expires_at');
+        
+        // Check if token exists and is not expired
+        if (cachedToken && cachedExpiresAt) {
+            const expiresAt = parseInt(cachedExpiresAt);
+            const now = Math.floor(Date.now() / 1000);
+            
+            // If token is still valid (with 5 min buffer), return it
+            if (now < expiresAt - 300) {
+                return cachedToken;
+            }
+        }
+        
+        // Token not in cache or expired, refresh from DB
+        const refreshToken = await TwitchStreamers.getAccountRefreshTokenById(BOT_USER_ID, 'twitch');
+        
+        if (!refreshToken) {
+            await notifyDevelopers('Bot refresh token not found in database', 'error');
+            return null;
+        }
+        
+        const refreshResult = await refreshTwitchToken(refreshToken, BOT_USER_ID);
+        
+        if (!refreshResult.token) {
+            await notifyDevelopers('Failed to refresh bot token', 'error');
+            return null;
+        }
+        
+        // Cache the bot token with expiration
+        const cache2 = await getDragonflyClient('Tokens');
+        const expiresIn = refreshResult.expiresIn || 7200;
+        const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+        
+        await cache2.hSet('app:twitch:bot', 'access_token', refreshResult.token);
+        await cache2.hSet('app:twitch:bot', 'expires_at', String(expiresAt));
+        await cache2.expire('app:twitch:bot', expiresIn + 300);
+        
+        return refreshResult.token;
+    } catch (error) {
+        console.error(`Error getting bot token: ${error}`);
+        return null;
+    }
+};

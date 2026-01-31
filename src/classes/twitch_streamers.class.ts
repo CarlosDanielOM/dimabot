@@ -90,9 +90,46 @@ class TwitchStreamers {
     async getAccountTokenById(id: string, account_type: 'twitch' | 'kick'): Promise<string | null> {
         try {
             const cache = await this.cachePromise;
-            let token = await cache.hGet(`accounts:${account_type}:${id}:data`, 'token');
-            if(!token) return null;
-            return token;
+            
+            // Get token and expiration from cache
+            let token = await cache.hGet(`accounts:${account_type}:${id}:data`, 'access_token');
+            let expiresAt = await cache.hGet(`accounts:${account_type}:${id}:data`, 'expires_at');
+            
+            // Check if token exists and is not expired
+            if (token && expiresAt) {
+                const expiration = parseInt(expiresAt);
+                const now = Math.floor(Date.now() / 1000);
+                
+                // If token is still valid (with 5 min buffer), return it
+                if (now < expiration - 300) {
+                    return token;
+                }
+            }
+            
+            // Token not in cache or expired, refresh
+            const refreshToken = await this.getAccountRefreshTokenById(id, account_type);
+            
+            if (!refreshToken) {
+                console.error(`Refresh token not found for ${account_type}:${id}`);
+                return null;
+            }
+            
+            // For Twitch, use the simplified refresh function
+            if (account_type === 'twitch') {
+                const { refreshTwitchToken } = await import('../utils/tokens.js');
+                const refreshResult = await refreshTwitchToken(refreshToken, id);
+                
+                if (!refreshResult.token) {
+                    console.error(`Failed to refresh Twitch token for ${id}`);
+                    return null;
+                }
+                
+                return refreshResult.token;
+            }
+            
+            // For other platforms (Kick, etc.), implement refresh logic later
+            console.error(`Refresh not implemented for ${account_type}`);
+            return null;
         } catch (error) {
             console.error(`Error getting account token by ID: ${error}`);
             return null;
