@@ -1,6 +1,7 @@
 import type { ITwitchEventData } from '../interfaces/twitch/eventsub.interface.js';
 import Commands from '../classes/command.class.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
+import * as ChannelFunctions from '../functions/channels/index.js';
 
 // ============================================================================
 // TYPE DEFINITIONS
