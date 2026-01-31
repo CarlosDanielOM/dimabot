@@ -97,6 +97,34 @@ User: "YOU JUST DELETED MY DATA!"
 
 ---
 
+## Git Operations
+
+### ✅ ALLOWED
+- **Local commits** - Allowed when it seems necessary for progress tracking
+  - Commits help track work locally
+  - Should be made after completing tasks
+  - Helps maintain git history of development
+
+### ❌ FORBIDDEN
+- **Pushing to remote**
+  - NO pushing commits without explicit permission
+  - NO force pushing without user confirmation
+  - Wait for user to request push or ask permission first
+  - Pushing affects remote repository state significantly
+
+### Required Actions
+
+### Before Pushing to Remote
+
+1. **STOP** - Do not proceed with push
+2. **ASK** - Request explicit permission from user
+3. **EXPLAIN** - Describe what will be pushed
+4. **WAIT** - Only proceed after user confirms
+
+**Never assume permission to push. Always ask first.**
+
+---
+
 ## Emergency Procedures
 
 If accidental data loss occurs:
