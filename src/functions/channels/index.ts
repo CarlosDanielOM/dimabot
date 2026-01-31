@@ -1,1 +1,1 @@
-export { addModerator } from './add_add_moderator.channel.js';
+export { addModerator } from './add_moderator.channel.js';
