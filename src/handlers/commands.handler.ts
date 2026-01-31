@@ -444,11 +444,28 @@ async function resolveCommandSwitch(
             return String(Math.floor(Math.random() * maxNumber));
         }
 
-        case 'randomuser':
-            return '⚠️ This feature is being implemented';
+        case 'randomuser': {
+            const chattersResult = await ChatFunctions.getChatters(channelID, channelID);
+            if (chattersResult.error) {
+                return chattersResult.message;
+            }
+            if (!chattersResult.chatters || chattersResult.chatters.length === 0) {
+                return messageEventData.chatter_user_name || messageEventData.chatter_user_login || 'Unknown';
+            }
+            const randomChatter = chattersResult.chatters[Math.floor(Math.random() * chattersResult.chatters.length)];
+            return randomChatter.user_name || randomChatter.user_login || 'Unknown';
+        }
 
-        case 'vip':
-            return '⚠️ This feature is being implemented';
+        case 'vip': {
+            const user = args.join(' ') || argument;
+            if (!user) return '';
+            
+            const vipResult = await ChannelFunctions.addChannelVIP(channelID, user);
+            if (vipResult.error) {
+                return vipResult.message;
+            }
+            return vipResult.message;
+        }
 
         case 'ban':
             return '⚠️ This feature is being implemented';
@@ -495,8 +512,13 @@ async function resolveCommandSwitch(
             return result.data?.game_name || 'No game set';
         }
 
-        case 'twitch.viewers':
-            return '⚠️ This feature is being implemented';
+        case 'twitch.viewers': {
+            const viewersResult = await ChatFunctions.getChatters(channelID, channelID);
+            if (viewersResult.error) {
+                return viewersResult.message;
+            }
+            return String(viewersResult.chatters?.length || 0);
+        }
 
         case 'twitch.follows': {
             const result = await ChannelFunctions.getTwitchFollowers(channelID);
@@ -528,8 +550,21 @@ async function resolveCommandSwitch(
         case 'start.poll':
             return '⚠️ This feature is being implemented';
 
-        case 'raid':
-            return '⚠️ This feature is being implemented';
+        case 'raid': {
+            const raidTarget = args[0] || argument || '';
+            if (!raidTarget) return ''; 
+            
+            const raidUserData = await TwitchStreamers.getTwitchAccountById(raidTarget);
+            if (!raidUserData) {
+                return 'User not found';
+            }
+
+            const raidResult = await ChannelFunctions.raid(channelID, raidUserData.id || '');
+            if (raidResult.error) {
+                return raidResult.message || 'Error raiding channel';
+            }
+            return '';
+        }
 
         case 'unraid': {
             const result = await ChannelFunctions.unraid(channelID);
