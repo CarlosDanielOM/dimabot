@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Triggers</title>
+    <style>
+        #triggerContainer {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 600px;
+            height: 1000px;
+        }
+    </style>
+</head>
+<body>
+    <div class="triggerContainer" id="triggerContainer"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script>
+        const channelID = window.location.pathname.split('/')[3];
+        const triggerContainer = document.getElementById('triggerContainer');
+
+        const socket = io(`/overlays/triggers/${channelID}`, { reconnection: true });
+
+        socket.on('connect_error', (error) => {
+            console.log('Error:', error);
+        });
+
+        socket.on('connect', () => {
+            console.log('Connected to triggers');
+        });
+
+        socket.on('error', (error) => {
+            console.log({error});
+            console.log('Error:', error);
+        });
+
+        let triggerCount = 0;
+
+        socket.on('trigger', (data) => {
+            triggerCount++;
+            const { mediaType, url, volume } = data;
+            let triggerType = mediaType.split('/')[0];
+            if(triggerType === 'video') {
+                let videoPlayer = createVideoPlayer(url, volume);
+                triggerContainer.appendChild(videoPlayer);
+            }
+        });
+
+        function createVideoPlayer(url, volume) {
+            let randomX = Math.floor(Math.random() * (1000 - 700));
+            let randomY = Math.floor(Math.random() * (600 - 500));
+            let videoPlayer = document.createElement('video');
+            videoPlayer.style.position = 'fixed';
+            videoPlayer.style.top = `0px`;
+            videoPlayer.style.left = `0px`;
+            videoPlayer.setAttribute('width', '1000px');
+            videoPlayer.setAttribute('autoplay', 'true');
+            videoPlayer.setAttribute('id', triggerCount);
+            videoPlayer.volume = (volume / 100);
+            videoPlayer.innerHTML = `<source src="${url}" type="video/mp4" />`;
+
+            videoPlayer.addEventListener('ended', () => {
+                videoPlayer.remove();
+            });
+
+            return videoPlayer;
+        }
+    </script>
+</body>
+</html>

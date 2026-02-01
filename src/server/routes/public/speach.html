@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speach Chat</title>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script>
+        const channelID = window.location.pathname.split('/').pop();
+        const audioPlayer = new Audio();
+
+        let lastMsgId = '';
+
+        const socket = io(`/speech/${channelID}`, {reconnection: true});
+
+        socket.on('speach', (data) => {
+            console.log({data});
+            if (lastMsgId === data.id) {
+                socket.emit('end', {id: data.id});
+            };
+            lastMsgId = data.id;
+            audioPlayer.src = `https://api.domdimabot.com/speech/${channelID}/${data.id}`;
+            // audioPlayer.src = `http://localhost:3000/speech/${channelID}/${data.id}`;
+            audioPlayer.play();
+
+            audioPlayer.addEventListener('ended', () => {
+                if (lastMsgId === data.id) {
+                    socket.emit('end', {id: data.id});
+                }
+            });
+        });
+    </script>
+</body>
+</html>

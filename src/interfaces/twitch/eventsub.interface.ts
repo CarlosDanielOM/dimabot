@@ -120,5 +120,15 @@ export interface IChatMessage extends ITwitchEventBase {
     is_source_only?: boolean;
 }
 
-export type ITwitchEventData = IBitUseEvent | IChatMessage;
+export interface IRaidEventData extends ITwitchEventBase {
+    viewers: number;
+    to_broadcaster_user_id: string;
+    to_broadcaster_user_login: string;
+    to_broadcaster_user_name: string;
+    from_broadcaster_user_id: string;
+    from_broadcaster_user_login: string;
+    from_broadcaster_user_name: string;
+}
+
+export type ITwitchEventData = IBitUseEvent | IChatMessage | IRaidEventData;
 export type ITwitchSubscriptionData = ITwitchSubscription;

@@ -1,0 +1,153 @@
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Poppins', sans-serif;
+}
+
+body {
+    background-color: transparent;
+}
+
+#container {
+    width: 800px;
+    height: 225px;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    overflow: hidden;
+    display: flex;
+}
+
+#vplayer {
+    width: 400px;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 1.5s ease-in-out;
+}
+
+#vplayer source {
+    width: 100%;
+    height: 400px;
+    color: rgb(50, 50, 50)
+}
+
+.img {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    position: absolute;
+    top: 62px;
+    left: 350px;
+    transform: scale(0);
+    opacity: 0;
+    z-index: 555;
+    transition: 
+        opacity 1.5s ease-in-out,
+        width 1.5s ease-in-out,
+        height 1.5s ease-in-out,
+        transform 1.5s ease-in-out
+    ;
+}
+
+.img img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+}
+
+.left-container {
+    width: 400px;
+    height: 100%;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+    border-radius: 15px 0 0 15px;
+    overflow: hidden;
+}
+
+.right-container {
+    width: 400px;
+    height: 100%;
+    position: absolute;
+    top: 0px;
+    left: 0px;
+    display: flex;
+    /* background-color: rgba(138, 43, 226, 0.5); */
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    transition: background-color 1.5s ease-in-out, transform 1s ease-in-out, opacity 1.5s ease-in-out;
+    overflow: hidden;
+    text-align: center;
+    border-radius: 0 15px 15px 0;
+    /* backdrop-filter: blur(10px); */
+    padding: 5px 5px 5px 55px;
+}
+
+.right-container .back {
+    width: 100%;
+    height: 100%;
+    background-color: #000;   
+}
+
+.right-container h2 {
+    font-size: 1.8em;
+    color: #b9b9b9;
+    margin-bottom: 10px;
+    font-weight: 300;
+}
+
+.right-container h3 {
+    font-size: 1em;
+    color: #b9b9b9;
+    margin-bottom: 10px;
+    font-weight: 300;
+}
+
+.right-container h4 {
+    font-size: .8em;
+    color: #b9b9b9;
+    margin-bottom: 10px;
+    font-weight: 300;
+}
+
+.slideInLeft {
+    animation-duration: 1.5s;
+    animation-name: slideInLeft;
+    animation-fill-mode: forwards;
+    animation-timing-function: ease-in-out;
+}
+
+.slideInRight {
+    animation-duration: 1.5s;
+    animation-name: slideInRight;
+    animation-fill-mode: forwards;
+    animation-timing-function: ease-in-out;
+}
+
+/*! Animations !*/
+@keyframes slideInLeft {
+    0% {
+        transform: translateX(0px);
+    }
+    100% {
+        transform: translateX(400px);
+    }
+}
+
+@keyframes slideInRight {
+    0% {
+        transform: translateX(0px);
+    }
+    100% {
+        transform: translateX(-400px);
+    }
+}

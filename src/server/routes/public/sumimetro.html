@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sumimetro Supremo</title>
+    <style>
+        body {
+            height: 100vh;
+            margin: 0;
+            color: #fff;
+        }
+
+        #container {
+            width: 350px;
+            height: 100px;
+            display: flex;
+            flex-direction: row;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 2rem;
+            text-align: center;
+            position: relative;
+            right: 0px;
+        }
+        
+        .animate {
+            animation: rotation 7s infinite;
+            transition: all 0.5s ease-in-out;
+        }
+        
+        @keyframes rotation {
+            0% {
+                right: -400px;
+            }
+            50% {
+                right: 0px;
+            }
+            100% {
+                right: 400px;
+            }
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="container"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.min.js"></script>
+    <script>
+        const type = window.location.pathname.split('/')[2];
+        const channel = window.location.pathname.split('/')[3];
+
+        const socket = io(`/sumimetro/${type}/${channel}`);
+
+        let animationFrame = null;
+        let animation = false;
+        const container = document.getElementById('container');
+
+        socket.on('connect', () => {
+            console.log('Connected to the server');
+        });
+
+        socket.on('sumimetro', (data) => {
+            const {username, value} = data;
+            const h1 = document.createElement('h1');
+            const text = `${username}: ${value}%`;
+            const title = `${type.toUpperCase()} Supremo`;
+            h1.textContent = text;
+            h1.id = 'supremo';
+
+            if(username.length > 7) {
+                if(animation) {
+                    clearInterval(animationFrame);
+                    animation = false;
+                }
+
+                container.innerHTML = '';
+
+                animationFrame = setInterval(() => {
+                    const h1 = document.createElement('h1');
+                    h1.textContent = text;
+                    h1.id = 'supremo';
+                    h1.classList.add('animate');
+                    container.appendChild(h1);
+                    setTimeout(() => {
+                        container.removeChild(h1);
+                    }, 7500);
+                }, 7000);
+                animation = true;
+            } else {
+                container.innerHTML = '';
+                container.appendChild(h1);
+                if(animation) {
+                    clearInterval(animationFrame);
+                    animation = false;
+                }
+            }
+            
+        });
+        
+    </script>
+</body>
+</html>

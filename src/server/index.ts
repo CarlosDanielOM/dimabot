@@ -17,6 +17,7 @@ import { QdrantStartUp } from '../utils/qdrant/start_up.qdrant.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { server } from './server.js';
 import { websocket } from './websocket.js';
+import { clipQueueHandler } from './clip_queue_handler.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
@@ -26,6 +27,13 @@ await getQdrantConnection('Server');
 await QdrantStartUp();
 
 await TwitchStreamers.getTwitchAccountsFromDB();
+
+// Initialize clip queue handler
+await clipQueueHandler.init();
+
+// Run startup cleanup for clip queue
+// TODO: Reactivate startup cleanup when testing is complete
+// await clipQueueHandler.startupCleanup();
 
 const app = await server();
 const websocketServer = await websocket(app);

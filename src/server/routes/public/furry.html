@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Furrymeter</title>
+</head>
+<body>
+    <h1 id="supremo"></h1>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script>
+        const channelID = window.location.pathname.split('/').pop();
+
+        const socket = io(`/overlays/furry/${channelID}`, {reconnection: true});
+
+        socket.on('furry', (data) => {
+            let { username, value } = data;
+            console.log({data});
+            let text = `${username}: ${value}%`;
+            document.getElementById('supremo').innerHTML = text;
+        });
+    </script>
+</body>
+</html>

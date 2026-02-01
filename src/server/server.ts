@@ -3,6 +3,8 @@ import cors from "cors";
 import fs from "fs";
 import path from "path";
 import { getDirname } from "../utils/pollyfills.js";
+import { fileRoute } from "./routes/file.route.js";
+import { clipRoute } from "./routes/clip.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -14,6 +16,12 @@ export const server = async (): Promise<Express.Application> => {
         app.use(express.urlencoded({ extended: true }));
         app.use(express.static(path.join(__dirname, 'routes', 'public')));
         app.use(cors());
+
+        // Setup file routes
+        fileRoute(app);
+
+        // Setup clip routes
+        clipRoute(app);
 
         //? Route imports
 
