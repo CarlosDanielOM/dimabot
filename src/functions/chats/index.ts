@@ -8,3 +8,4 @@ export { getOnlyEmotes } from './get_only_emotes.chat.js';
 export { getChatSettings } from './get_settings.chat.js';
 export { getUserColor } from './get_user_color.chat.js';
 export { setOnlyEmotes } from './set_only_emotes.chat.js';
+export { speach } from './speech.chat.js';
