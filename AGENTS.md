@@ -209,6 +209,27 @@ When creating new function files:
 2. Use ES module syntax with `.js` extensions for imports
 3. Maintain alphabetical or logical ordering
 
+### Cache Key Naming Convention
+
+When caching Twitch-related data, use the following pattern:
+
+**Format:** `twitch:channelID:category[:subcategory]`
+
+**Examples:**
+- Channel editors: `twitch:channelID:editors`
+- Moderators: `twitch:channelID:moderators`
+- Moderator IDs: `twitch:channelID:moderators:ids`
+- Moderator logins: `twitch:channelID:moderators:logins`
+- Commands: `twitch:channelID:commands:cmd` (cmd is the command name)
+- Polls: `twitch:channelID:polls`
+
+**Key Points:**
+- Always use `twitch:` prefix if its related to Twitch, if in doubt, ask
+- Use broadcaster ID (numeric string), not login
+- Use plural form for collections (moderators, editors, polls)
+- Use hierarchical structure with `:` as separator (like folder structure)
+- For nested data, add subcategories after the main category
+
 ---
 
 ## Git Operations
@@ -253,3 +274,151 @@ If accidental data loss occurs:
 ## Reminder
 
 **READ-ONLY on data stores. WRITE ONLY with permission.**
+
+---
+
+## Lessons Learned for Future Agents
+
+### Smart Token Refresh Pattern
+
+When implementing token refresh systems:
+
+1. **Expiration-Based Refresh**: Only refresh tokens when they're expired or close to expiring (5-minute buffer)
+   - Store `expires_at` timestamp in cache
+   - Check against current time before returning token
+   - This prevents unnecessary API calls and improves performance
+
+2. **URL Encoding**: Always URL-encode refresh tokens when making OAuth refresh calls
+   ```typescript
+   const params = new URLSearchParams({
+       refresh_token: encodeURIComponent(refresh_token)  // Critical for special characters
+   });
+   ```
+
+3. **Error Handling on Token Failure**: When refresh fails, completely invalidate both cache and DB:
+   - Clear cache: set `access_token` and `refresh_token` to empty strings
+   - Clear DB: set tokens to `{iv: null, content: null}`
+   - Set permissions: set `has_permissions` and `up_to_date_permissions` to `false`
+   - This prevents infinite retry loops
+
+4. **Simplification Pattern**: Remove unnecessary parameters like `independent` flags
+   - Make functions do one thing consistently
+   - Always update both cache and DB when called
+
+### Token Type Selection
+
+When working with Twitch API, use the correct token type:
+
+| Operation | Token Type | Function |
+|-----------|-------------|-----------|
+| Announcements/Shoutouts (bot actions) | Bot token | `getTwitchBotHeader()` |
+| Channel moderation/management | Streamer token | `getTwitchStreamerHeaderById()` |
+| Read-only operations (user info, search) | App token | `getTwitchAppHeader()` |
+
+**Key**: Bot tokens are stored in DB like any user, but cached under `app:twitch:bot` key.
+
+### TypeScript Build Issues and Fixes
+
+1. **Header Type Casting**: TypeScript doesn't accept custom interfaces for fetch headers
+   ```typescript
+   // Don't do this (fails type check):
+   headers: streamerHeader
+   
+   // Do this instead:
+   headers: streamerHeader as unknown as Record<string, string>
+   ```
+
+2. **URLSearchParams toString()**: Always convert URLSearchParams to string before passing
+   ```typescript
+   // Don't do this:
+   getTwitchHelixUrl('endpoint', params)
+   
+   // Do this instead:
+   getTwitchHelixUrl('endpoint', params.toString())
+   ```
+
+3. **Nullable ID Fields**: When accessing ID fields from cache, handle undefined:
+   ```typescript
+   const raidResult = await ChannelFunctions.raid(channelID, raidUserData.id || '');
+   // Use default fallback to prevent type errors
+   ```
+
+### Commands Handler Implementation Pattern
+
+1. **Dot Notation**: Commands like `twitch.subs` are parsed as `twitch` + `subs` args
+   ```typescript
+   if (['twitch', 'set', 'start'].includes(commandName) && args.length > 0) {
+       const subCommand = args[0];
+       resolvedCommand = `${commandName}.${subCommand}`;
+       resolvedArgs = args.slice(1);
+   }
+   ```
+
+2. **Gradual Implementation**: When implementing commands, work in phases:
+   - Phase 1: Implement functions and verify build passes
+   - Phase 2: Wire functions into commands handler
+   - Phase 3: Test each command individually
+   - Phase 4: Commit after each phase
+
+### Response Interface Consistency
+
+All function responses should follow this structure:
+
+```typescript
+interface StandardResponse {
+    error: boolean;
+    message: string;
+    status?: number;
+    type?: string;
+    data?: any;
+}
+```
+
+**Note**: `message` is for user-facing messages (keep simple). Developer-facing logs go in `console.error()`.
+
+### Testing Strategy
+
+1. **Build Early, Build Often**: Run `npm run build` after each major change
+   - Catch TypeScript errors immediately
+   - Prevents cascading type errors
+   - Makes debugging easier
+
+2. **Commit in Logical Chunks**: Commit related changes together
+   - One feature/function per commit
+   - Clear, descriptive commit messages
+   - Easier to review and revert if needed
+
+### Deprecated Function Handling
+
+When deprecating functions:
+1. Add `@deprecated` JSDoc comment
+2. Keep function available but clearly marked
+3. Document what replaces it
+4. Let user decide when to remove
+
+Example:
+```typescript
+ /**
+  * @deprecated This function is deprecated. Tokens are now refreshed automatically when needed.
+  * Use getBotToken() or refreshTwitchToken() instead.
+  */
+ export const refreshAllTokens = async () => { ... }
+ ```
+
+---
+
+## Planning Guidelines
+
+When creating implementation plans:
+
+1. **Save Plan to File**: Always write the plan to a markdown file named `plan_plan_reason.md`
+   - This allows viewing on the go with `cat planname.md`
+   - Makes plans easily accessible from phone terminal
+
+2. **Overwrite Protection**: If a plan file with the same name already exists:
+   - STOP before overwriting
+   - ASK the user for confirmation
+   - EXPLAIN what will be replaced
+   - WAIT for explicit permission before proceeding
+
+**Never overwrite existing plan files without permission.**
