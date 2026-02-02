@@ -45,5 +45,11 @@ COPY . .
 # ---------------------------------------------------------------------
 # 7. Build the Project
 # ---------------------------------------------------------------------
-# Build the TypeScript project to JavaScript
+# Build TypeScript project to JavaScript
 RUN npm run build
+
+# 7.5 Copy public HTML files to dist
+# ---------------------------------------------------------------------
+# Copy static HTML files for overlays to build output
+COPY --chown=node:node ./src/server/routes/public/ ./dist/server/routes/public/
+

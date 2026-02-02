@@ -5,7 +5,7 @@ import { getDirname } from "../../utils/pollyfills.js";
 
 export const clipRoute = (app: express.Application): void => {
     const __dirname = getDirname(import.meta.url);
-    const htmlPath = path.join(__dirname, 'routes', 'public');
+    const htmlPath = path.join(__dirname, 'public');
 
     // GET /clip/:channelID - Serve clip.html
     app.get('/clip/:channelID', async (req: Request, res: Response) => {
