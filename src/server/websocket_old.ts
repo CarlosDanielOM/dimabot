@@ -5,7 +5,7 @@ import fs from "fs";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
-import { clipQueueHandler } from "./clip_queue_handler.js";
+import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
 
 let io: Server | null = null;
 

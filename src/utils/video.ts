@@ -13,7 +13,8 @@ export async function downloadClip(
     downloadDir: string
 ): Promise<DownloadClipResult> {
     return new Promise((resolve) => {
-        const absoluteDownloadDir = `${process.cwd()}/src/server/routes/public/downloads`;
+        // Use the provided downloadDir parameter instead of rebuilding the path
+        const absoluteDownloadDir = downloadDir;
         const filePath = `${absoluteDownloadDir}/${channelID}-clip.mp4`;
 
         if (!fs.existsSync(absoluteDownloadDir)) {
@@ -38,32 +39,45 @@ export async function downloadClip(
             });
         }
 
+        // Increased timeout to 60 seconds (clips can take longer than 10s)
         const timeout = setTimeout(() => {
-            console.log(`Timeout triggered for ${channelID} downloading ${url}`);
+            console.error(`Timeout triggered for ${channelID} downloading ${url} after 60 seconds`);
             downloadProcess.kill();
 
             resolve({
                 error: true,
-                message: `Download timeout after 10 seconds for URL: ${url}`
+                message: `Download timeout after 60 seconds for URL: ${url}`
             });
-        }, 10000);
+        }, 60000);
 
         downloadProcess.on('exit', (code) => {
             clearTimeout(timeout);
 
             if (code === 0) {
-                resolve({
-                    error: false,
-                    message: 'Success',
-                    filePath
-                });
+                // Verify file exists before reporting success
+                if (fs.existsSync(filePath)) {
+                    resolve({
+                        error: false,
+                        message: 'Success',
+                        filePath
+                    });
+                } else {
+                    console.error(`Download reported success but file not found: ${filePath}`);
+                    resolve({
+                        error: true,
+                        message: `Download completed but file not found at: ${filePath}`
+                    });
+                }
             } else {
                 const errorMessage = `Clip download failed with exit code: ${code}. Stderr: ${stderrData || 'No stderr output.'} Stdout: ${stdoutData || 'No stdout output.'}`;
 
                 console.error(`Error in downloadClip:`, {
                     channelID,
                     clipUrl: url,
+                    exitCode: code,
                     errorMessage,
+                    stdout: stdoutData,
+                    stderr: stderrData,
                     timestamp: new Date().toISOString()
                 });
 

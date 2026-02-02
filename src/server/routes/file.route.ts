@@ -6,7 +6,7 @@ import { getDirname } from "../../utils/pollyfills.js";
 const __dirname = getDirname(import.meta.url);
 
 export const fileRoute = (app: express.Application): void => {
-    const publicDir = path.join(__dirname, 'routes', 'public');
+    const publicDir = path.join(__dirname, 'public');
 
     app.get('/video/clip/:channelID', async (req: Request, res: Response) => {
         try {
@@ -23,6 +23,7 @@ export const fileRoute = (app: express.Application): void => {
             const videoPath = path.join(publicDir, 'downloads', `${channelID}-clip.mp4`);
 
             if (!fs.existsSync(videoPath)) {
+                console.error(`Video file not found at: ${videoPath}`);
                 return res.status(404).json({
                     error: true,
                     message: 'Clip not found',
@@ -60,13 +61,7 @@ export const fileRoute = (app: express.Application): void => {
                 res.writeHead(206, head);
                 file.pipe(res);
             } else {
-                const head = {
-                    'Content-Length': fileSize,
-                    'Content-Type': 'video/mp4'
-                };
-
-                res.writeHead(200, head);
-                fs.createReadStream(videoPath).pipe(res);
+                res.sendFile(videoPath);
             }
         } catch (error) {
             console.error('Error serving video clip:', {

@@ -15,13 +15,17 @@ import { getMongoDBConnection } from '../utils/databases/mongodb.database.js';
 import { getQdrantConnection } from '../utils/databases/qdrant.database.js';
 import { QdrantStartUp } from '../utils/qdrant/start_up.qdrant.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
+import { pubSubManager } from '../classes/pubsub_manager.class.js';
 import { server } from './server.js';
 import { websocket } from './websocket.js';
-import { clipQueueHandler } from './clip_queue_handler.js';
+import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
 await getQdrantConnection('Server');
+
+// Initialize PubSub for clip queue
+await pubSubManager.init();
 
 //! Qdrant Start Up
 await QdrantStartUp();
@@ -38,6 +42,11 @@ await clipQueueHandler.init();
 const app = await server();
 const websocketServer = await websocket(app);
 
-websocketServer!.listen(3000, () => {
-    console.log('Server listening on port 3000');
-});
+if (websocketServer) {
+    websocketServer.listen(3000, () => {
+        console.log('Server listening on port 3000');
+    });
+} else {
+    console.error('Failed to initialize websocket server');
+    process.exit(1);
+}

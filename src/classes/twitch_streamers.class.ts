@@ -15,6 +15,29 @@ class TwitchStreamers {
         this.cachePromise = getDragonflyClient('TwitchStreamers');
     }
 
+    async getTwitchAccountsFromCache(): Promise<IUsersCache[] | null> {
+        try {
+            const cache = await this.cachePromise;
+
+            const cachedAccounts = await cache.get('twitch:accounts');
+            if(cachedAccounts) {
+                return JSON.parse(cachedAccounts) as IUsersCache[];
+            }
+            
+            const keys = await cache.keys('accounts:twitch:*:data');
+            let accounts: IUsersCache[] = [];
+            for(const key of keys) {
+                const account = await cache.hGetAll(key) as unknown as IUsersCache;
+                accounts.push(account);
+            }
+            await cache.set('twitch:accounts', JSON.stringify(accounts), { EX: 3600 });
+            return accounts;
+        } catch (error) {
+            console.error(`Error getting Twitch accounts from cache: ${error}`);
+            return [];
+        }
+    }
+
     async getTwitchAccountsFromDB() {
         try {
             const cache = await this.cachePromise;
@@ -22,6 +45,7 @@ class TwitchStreamers {
             const result = await UsersSchema.find<IUsers>({ 'accounts.type': 'twitch' }).select('accounts plan_tier').lean();
 
             cache.del(`streamers:by:name`);
+            await cache.del('twitch:accounts');
             for (const user of result ?? []) {
                 const twitchAccount = user.accounts.find((account) => account.type === 'twitch');
 

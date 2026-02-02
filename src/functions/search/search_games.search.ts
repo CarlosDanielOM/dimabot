@@ -1,4 +1,4 @@
-import { getTwitchBotHeader } from '../../utils/header.js';
+import { getTwitchAppHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface TwitchGame {
@@ -18,24 +18,13 @@ interface SearchGameResponse {
 
 export async function searchGameById(gameID: string): Promise<SearchGameResponse> {
     try {
-        const botHeaderResult = await getTwitchBotHeader();
-
-        if (botHeaderResult.error || !botHeaderResult.header) {
-            return {
-                error: true,
-                message: botHeaderResult.message,
-                status: 403,
-                type: 'permission_error'
-            };
-        }
-
-        const botHeader = botHeaderResult.header;
+        const appHeader = await getTwitchAppHeader();
 
         const params = new URLSearchParams();
         params.append('id', gameID);
 
         const response = await fetch(getTwitchHelixUrl('games', params.toString()), {
-            headers: botHeader as unknown as Record<string, string>
+            headers: appHeader as unknown as Record<string, string>
         });
 
         const data = await response.json();
@@ -80,24 +69,13 @@ export async function searchGameById(gameID: string): Promise<SearchGameResponse
 
 export async function searchGameByName(gameName: string): Promise<SearchGameResponse> {
     try {
-        const botHeaderResult = await getTwitchBotHeader();
-
-        if (botHeaderResult.error || !botHeaderResult.header) {
-            return {
-                error: true,
-                message: botHeaderResult.message,
-                status: 403,
-                type: 'permission_error'
-            };
-        }
-
-        const botHeader = botHeaderResult.header;
+        const appHeader = await getTwitchAppHeader();
 
         const params = new URLSearchParams();
         params.append('name', gameName);
 
         const response = await fetch(getTwitchHelixUrl('games', params.toString()), {
-            headers: botHeader as unknown as Record<string, string>
+            headers: appHeader as unknown as Record<string, string>
         });
 
         const data = await response.json();
@@ -142,24 +120,13 @@ export async function searchGameByName(gameName: string): Promise<SearchGameResp
 
 export async function searchGameByIgdbId(igdbID: string): Promise<SearchGameResponse> {
     try {
-        const botHeaderResult = await getTwitchBotHeader();
-
-        if (botHeaderResult.error || !botHeaderResult.header) {
-            return {
-                error: true,
-                message: botHeaderResult.message,
-                status: 403,
-                type: 'permission_error'
-            };
-        }
-
-        const botHeader = botHeaderResult.header;
+        const appHeader = await getTwitchAppHeader();
 
         const params = new URLSearchParams();
         params.append('external_id', igdbID);
 
         const response = await fetch(getTwitchHelixUrl('games', params.toString()), {
-            headers: botHeader as unknown as Record<string, string>
+            headers: appHeader as unknown as Record<string, string>
         });
 
         const data = await response.json();

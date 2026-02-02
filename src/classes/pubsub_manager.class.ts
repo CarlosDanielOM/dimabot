@@ -55,6 +55,8 @@ class PubSubManager {
                 await this.init();
             }
 
+            subscriptions.set(channel, handler);
+
             await subscriber.subscribe(channel, (message: string, subChannel: string) => {
                 if (subChannel === channel) {
                     const handler = subscriptions.get(channel);
@@ -64,7 +66,6 @@ class PubSubManager {
                     }
                 }
             });
-            subscriptions.set(channel, handler);
         } catch (error) {
             console.error(`Error subscribing to ${channel}:`, error);
             throw error;

@@ -303,12 +303,47 @@
         const channelID = window.location.pathname.split('/')[2];
         const socket = io(`/clip/${channelID}`, {reconnection: true});
 
+        setInterval(() => {
+            socket.emit('ping', {channelID: channelID});
+        }, 1000);
+
+        socket.on('ping', data => {
+            console.log('ping', data);
+        });
+
         socket.on('start-clip', data => {
             socket.emit('clip-ended', {channelID: channelID});
         });
         
-        socket.on('play-clip', data => {
+        socket.on('play-clip', async data => {
+            let clipLink = null;
             console.log({data});
+            if(!testing) {
+                clipLink = `https://api.domdimabot.com/video/clip/${channelID}?t=${Date.now()}`;
+            } else {
+                clipLink = `http://localhost:3000/video/clip/${channelID}?t=${Date.now()}`;
+            }
+
+            let videoExists = false;
+            try {
+                const response = await fetch(clipLink, { method: 'HEAD' });
+                if (!response.ok) {
+                    console.log('Video not found, emitting clip-ended');
+                    socket.emit('clip-ended', { channelID: channelID, clipID: data.clipID });
+                    return;
+                }
+                videoExists = true;
+            } catch (error) {
+                console.error('Error checking video:', error);
+                socket.emit('clip-ended', { channelID: channelID, clipID: data.clipID });
+                return;
+            }
+
+            if (!videoExists) {
+                socket.emit('clip-ended', { channelID: channelID, clipID: data.clipID });
+                return;
+            }
+
             let duration = Number(data.duration);
             if(duration > timeout) {
                 duration = timeout;
@@ -345,14 +380,6 @@
                 profileImg.setAttribute('src', data.profileImage);
             }
 
-            let clipLink = null;
-            
-            if(!testing) {
-                clipLink = `https://api.domdimabot.com/video/clip/${channelID}?t=${Date.now()}`;
-            } else {
-                clipLink = `http://localhost:3000/video/clip/${channelID}?t=${Date.now()}`;
-            }
-
             const videoSource = document.createElement('source');
             videoSource.setAttribute('src', clipLink);
             videoSource.setAttribute('type', 'video/mp4');
@@ -386,7 +413,7 @@
                         if(design == 1) profileImg.remove();
                         imgContainer.style.background = 'none';
                         console.log('clip ended');
-                        socket.emit('clip-ended', {channelID: channelID});
+                        socket.emit('clip-ended', {channelID: channelID, clipID: data.clipID});
                     }, (1000 * duration) + (1000));
                     
                     console.log('clip started');

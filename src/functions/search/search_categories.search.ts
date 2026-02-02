@@ -1,4 +1,4 @@
-import { getTwitchBotHeader } from '../../utils/header.js';
+import { getTwitchAppHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface TwitchCategory {
@@ -18,24 +18,13 @@ interface SearchCategoriesResponse {
 
 export async function searchCategories(query: string): Promise<SearchCategoriesResponse> {
     try {
-        const botHeaderResult = await getTwitchBotHeader();
-
-        if (botHeaderResult.error || !botHeaderResult.header) {
-            return {
-                error: true,
-                message: botHeaderResult.message,
-                status: 403,
-                type: 'permission_error'
-            };
-        }
-
-        const botHeader = botHeaderResult.header;
+        const appHeader = await getTwitchAppHeader();
 
         const params = new URLSearchParams();
         params.append('query', query);
 
         const response = await fetch(getTwitchHelixUrl('search/categories', params.toString()), {
-            headers: botHeader as unknown as Record<string, string>
+            headers: appHeader as unknown as Record<string, string>
         });
 
         const data = await response.json();

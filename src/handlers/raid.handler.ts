@@ -127,7 +127,7 @@ export async function raidHandler(
 
             return {
                 error: true,
-                message: announcementResult.message || 'Failed to send announcement',
+                message: message || 'Failed to send announcement',
                 status: announcementResult.status,
                 type: 'error'
             };

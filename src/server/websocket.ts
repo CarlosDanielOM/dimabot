@@ -1,28 +1,30 @@
-import { Server } from "socket.io";
+import { Server as SocketIOServer } from "socket.io";
 import type { Socket as SocketIOSocket } from "socket.io";
-import http from "http";
+import http, { type Server as HttpServer } from "http";
 import fs from "fs";
 import path from "path";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
-import { clipQueueHandler } from "./clip_queue_handler.js";
+import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
 import { getDirname } from "../utils/pollyfills.js";
 
 const __dirname = getDirname(import.meta.url);
 
-let io: Server | null = null;
+let io: SocketIOServer | null = null;
+let cacheClient: Awaited<ReturnType<typeof getDragonflyClient>> | null = null;
+const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
-export const websocket = async (app: any): Promise<Server | null> => {
+export const websocket = async (app: any): Promise<HttpServer | null> => {
     try {
+        cacheClient = await getDragonflyClient('Websocket');
         let server = http.createServer(app);
-        io = new Server(server, {
+        io = new SocketIOServer(server, {
             connectionStateRecovery: {}
         });
 
         //? Clip Namespace with heartbeat mechanism
         io.of(/^\/clip\/\w+$/).on('connection', async (socket) => {
-            const cacheClient = await getDragonflyClient('Websocket');
             const channelID = socket.nsp.name.split('/')[2];
 
             const account = await TwitchStreamers.getTwitchAccountById(channelID);
@@ -34,84 +36,108 @@ export const websocket = async (app: any): Promise<Server | null> => {
                 return;
             }
 
+            // Clear any pending disconnect timeout for this channel
+            const existingTimeout = disconnectTimeouts.get(channelID);
+            if (existingTimeout) {
+                clearTimeout(existingTimeout);
+                disconnectTimeouts.delete(channelID);
+                console.log(`${channelID} reconnected, cleared disconnect timeout`);
+            }
+
             // Cleanup old processing flag
             try {
-                await cacheClient.del(`twitch:${channelID}:clip:processing`);
+                await cacheClient!.del(`twitch:${channelID}:clip:processing`);
             } catch (error) {
                 console.error(`Error deleting old processing flag for ${channelID}:`, error);
             }
 
-            // Set connection flag
-            await cacheClient.set(`twitch:${channelID}:clips:connected`, "true");
+            // Set connection flag and initial heartbeat timestamp
+            await cacheClient!.set(`twitch:${channelID}:clips:connected`, "true");
+            await cacheClient!.set(`twitch:${channelID}:clips:last_activity`, Date.now());
             console.log(`${channelID} (${account.name}) connected to clip`);
 
             // Subscribe to clip requests for this channel
             await clipQueueHandler.subscribeToChannel(channelID);
 
+            // Check if there's already a queue waiting and start processing
+            const isProcessing = await cacheClient!.exists(`twitch:${channelID}:clip:processing`);
+            if (!isProcessing) {
+                const queueLength = await cacheClient!.zCard(`twitch:${channelID}:clips:queue`);
+                if (queueLength > 0) {
+                    console.log(`Found ${queueLength} clips in queue for ${channelID}, starting processing`);
+                    await clipQueueHandler.processNextClip(channelID);
+                }
+            }
+
             // Handle clip-ended event from OBS
-            socket.on('clip-ended', async () => {
-                console.log('Clip ended for channel \${channelID}');
-
-                // Clear processing flag
-                await cacheClient.del('twitch:\${channelID}:clip:processing');
-
-                // Process next clip in queue
-                await clipQueueHandler.processNextClip(channelID);
+            socket.on('clip-ended', async (data: { channelID: string, clipID?: string }) => {
+                // Use the handler's cleanup method which also clears timeouts
+                await clipQueueHandler.handleClipEnded(data.channelID, data.clipID);
             });
 
             // Handle heartbeat/ping from OBS
             socket.on('ping', async () => {
-                await cacheClient.set(`twitch:${channelID}:clips:last_activity`, Date.now());
+                await cacheClient!.set(`twitch:${channelID}:clips:last_activity`, Date.now());
             });
 
             // Handle disconnect with 30s delay
-            let disconnectTimeout: NodeJS.Timeout | null = null;
             socket.on('disconnect', () => {
-                console.log('\${channelID} (\${account.name}) disconnected from clip');
+                console.log(`${channelID} (${account.name}) disconnected from clip`);
 
-                disconnectTimeout = setTimeout(async () => {
-                    await cacheClient.del('twitch:\${channelID}:clips:connected');
-                    await cacheClient.del('twitch:\${channelID}:clips:timeouts:default');
-                    console.log('\${channelID} OBS connection removed (30s timeout)');
+                const timeout = setTimeout(async () => {
+                    // Check if socket is still disconnected before cleaning up
+                    const namespace = io?.of(`/clip/${channelID}`);
+                    if (namespace) {
+                        const sockets = await namespace.fetchSockets();
+                        if (sockets.length === 0) {
+                            await cacheClient!.del(`twitch:${channelID}:clips:connected`);
+                            await cacheClient!.del(`twitch:${channelID}:clips:timeouts:default`);
+                            console.log(`${channelID} OBS connection removed (30s timeout)`);
+                        } else {
+                            console.log(`${channelID} has ${sockets.length} active socket(s), keeping connection flag`);
+                        }
+                    }
+                    disconnectTimeouts.delete(channelID);
                 }, 30000);
-            });
 
-            // Clear disconnect timeout if reconnected
-            socket.on('connect', () => {
-                if (disconnectTimeout) {
-                    clearTimeout(disconnectTimeout);
-                    disconnectTimeout = null;
-                    console.log('\${channelID} OBS reconnected within timeout, clearing disconnect timer');
-                }
+                disconnectTimeouts.set(channelID, timeout);
             });
 
             // Optional: Read timeout from query param
             const socketQuery = socket.handshake.query as Record<string, string>;
             const timeoutParam = socketQuery.timeout;
             if (timeoutParam && !isNaN(parseInt(timeoutParam))) {
-                await cacheClient.set('twitch:\${channelID}:clips:timeouts:default', timeoutParam);
-                console.log('Set clip timeout for channel \${channelID} to \${timeoutParam}s');
+                await cacheClient!.set(`twitch:${channelID}:clips:timeouts:default`, timeoutParam);
+                console.log(`Set clip timeout for channel ${channelID} to ${timeoutParam}s`);
             }
         });
 
-        // Setup stale connection cleanup job
+        // Setup stale connection cleanup job - only clean up truly stale connections
         setInterval(async () => {
+            if (!io || !cacheClient) return;
+
             try {
-                const allChannels = await TwitchStreamers.getTwitchAccountsFromDB();
-                if (allChannels && allChannels.length > 0) {
-                    for (const channel of allChannels) {
-                        const lastActivity = await cacheClient.get(`twitch:${channel.id}:clips:last_activity`);
-                        
-                        if (lastActivity) {
-                            const lastActivityTime = parseInt(lastActivity);
-                            const inactiveTime = Date.now() - lastActivityTime;
-                            
-                            if (inactiveTime > 60000) {
-                                await cacheClient.del(`twitch:${channel.id}:clips:connected`);
-                                await cacheClient.del(`twitch:${channel.id}:clips:processing`);
-                                console.log(`${channel.id} (${channel.name}) marked as inactive (no heartbeat for 60s)`);
-                            }
-                        }
+                const allChannels = await TwitchStreamers.getTwitchAccountsFromCache();
+                if (!allChannels || allChannels.length === 0) return;
+
+                for (const channel of allChannels) {
+                    const namespace = io.of(`/clip/${channel.id}`);
+                    const sockets = await namespace.fetchSockets();
+                    
+                    // If there are active sockets, skip cleanup
+                    if (sockets.length > 0) {
+                        continue;
+                    }
+
+                    // Check heartbeat timestamp - only delete if no heartbeat for 60+ seconds
+                    const lastActivity = await cacheClient.get(`twitch:${channel.id}:clips:last_activity`);
+                    const now = Date.now();
+                    const timeSinceActivity = lastActivity ? now - parseInt(lastActivity) : Infinity;
+
+                    if (timeSinceActivity > 60000) {
+                        await cacheClient.del(`twitch:${channel.id}:clips:connected`);
+                        await cacheClient.del(`twitch:${channel.id}:clips:processing`);
+                        // console.log(`${channel.id} (${channel.name}) marked as inactive (no heartbeat for ${Math.round(timeSinceActivity / 1000)}s)`);
                     }
                 }
             } catch (error) {
@@ -135,7 +161,7 @@ export const websocket = async (app: any): Promise<Server | null> => {
     }
 }
 
-export function getIO(): Server | null {
+export function getIO(): SocketIOServer | null {
     return io;
 }
 

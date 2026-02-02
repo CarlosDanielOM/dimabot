@@ -2,7 +2,7 @@ import type { RedisClientType } from 'redis';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
 import { pubSubManager, type ClipRequestData } from '../classes/pubsub_manager.class.js';
 import { downloadClip, deleteOldClip } from '../utils/video.js';
-import { getIO } from './websocket.js';
+import { getIO } from '../server/websocket.js';
 
 class ClipQueueHandler {
     private cache: RedisClientType | null = null;
@@ -51,9 +51,15 @@ class ClipQueueHandler {
         }
 
         try {
-            const idExists = await this.cache.zRank(`twitch:${channelID}:clips:queue`, clipData.clipID);
+            // Check queue length and processing status BEFORE adding the clip
+            const queueLengthBefore = await this.cache.zCard(`twitch:${channelID}:clips:queue`);
+            const isProcessing = await this.cache.exists(`twitch:${channelID}:clip:processing`);
 
-            if (!idExists) {
+            const idExists = await this.cache.zRank(`twitch:${channelID}:clips:queue`, clipData.clipID);
+            const wasQueueEmpty = queueLengthBefore === 0;
+            const clipWasAdded = !idExists;
+
+            if (clipWasAdded) {
                 await this.cache.zAdd(`twitch:${channelID}:clips:queue`, {
                     score: clipData.timestamp,
                     value: clipData.clipID
@@ -61,12 +67,19 @@ class ClipQueueHandler {
                 await this.cache.set(`twitch:${channelID}:clips:queue:data:${clipData.clipID}`, JSON.stringify(clipData));
             }
 
-            const isProcessing = await this.cache.exists(`twitch:${channelID}:clip:processing`);
-
+            // If nothing is processing, start processing
             if (!isProcessing) {
-                await this.cache.set(`twitch:${channelID}:clip:processing`, "true");
-                this.processingChannels.add(channelID);
-                await this.downloadAndSendToOBS(channelID, clipData);
+                // If queue was empty and we just added this clip, process it directly
+                if (wasQueueEmpty && clipWasAdded) {
+                    await this.cache.set(`twitch:${channelID}:clip:processing`, "true");
+                    this.processingChannels.add(channelID);
+                    // Remove from queue since we're processing it directly
+                    await this.cache.zRem(`twitch:${channelID}:clips:queue`, clipData.clipID);
+                    await this.downloadAndSendToOBS(channelID, clipData);
+                } else {
+                    // Queue already had items OR clip already existed, process the oldest one (FIFO)
+                    await this.processNextClip(channelID);
+                }
             }
         } catch (error) {
             console.error(`Error in handleClipRequest for channel ${channelID}:`, {
@@ -134,10 +147,11 @@ class ClipQueueHandler {
                 timeoutSeconds = parseInt(timeoutSetting);
             }
 
-            timeoutSeconds += 5;
+            // Increased buffer to account for longer download times (60s download + 5s buffer)
+            timeoutSeconds += 65;
 
             timeout = setTimeout(async () => {
-                console.error(`Clip timeout for ${channelID}, clipID: ${clipData.clipID}`);
+                console.error(`Clip timeout for ${channelID}, clipID: ${clipData.clipID} after ${timeoutSeconds} seconds`);
 
                 await this.cleanupClip(channelID, clipData.clipID);
 
@@ -146,13 +160,20 @@ class ClipQueueHandler {
 
             this.currentTimeouts.set(timeoutKey, timeout);
 
-            const downloadDir = `${process.cwd()}/src/server/routes/public/downloads`;
+            // Use dist path to match where the route serves files from (compiled location)
+            const downloadDir = `${process.cwd()}/dist/server/routes/public/downloads`;
 
             await deleteOldClip(channelID, downloadDir);
 
             const downloadResult = await downloadClip(clipData.clipUrl, channelID, downloadDir);
 
             if (downloadResult.error) {
+                console.error(`Download failed for channel ${channelID}, clipID: ${clipData.clipID}:`, {
+                    error: downloadResult.message,
+                    clipUrl: clipData.clipUrl,
+                    timestamp: new Date().toISOString()
+                });
+
                 if (timeout) {
                     clearTimeout(timeout);
                     this.currentTimeouts.delete(timeoutKey);
@@ -187,8 +208,9 @@ class ClipQueueHandler {
             };
 
             io.of(`/clip/${channelID}`).emit('play-clip', clipPayload);
-
-            console.log(`Clip sent to OBS for channel ${channelID}, clipID: ${clipData.clipID}`);
+            
+            // Keep timeout active - it will be cleared when clip ends normally or if it times out
+            // The timeout serves as a safety net in case OBS never sends 'clip-ended'
         } catch (error) {
             console.error(`Error in downloadAndSendToOBS for channel ${channelID}:`, {
                 clipData,
@@ -231,6 +253,33 @@ class ClipQueueHandler {
                 timestamp: new Date().toISOString()
             });
         }
+    }
+
+    /**
+     * Public method to handle cleanup when a clip ends normally (called from websocket handler)
+     */
+    async handleClipEnded(channelID: string, clipID?: string): Promise<void> {
+        if (!this.cache) {
+            console.error('Cache not initialized in handleClipEnded');
+            return;
+        }
+
+        // If clipID is missing, try to find it from the queue data
+        if (!clipID) {
+            // Get the oldest clip from queue (should be the one currently processing)
+            const queueKeys = await this.cache.keys(`twitch:${channelID}:clips:queue:data:*`);
+            if (queueKeys.length > 0) {
+                // Extract clipID from key pattern: twitch:channelID:clips:queue:data:clipID
+                const firstKey = queueKeys[0];
+                const extractedClipID = firstKey.split(':').pop();
+                if (extractedClipID) {
+                    clipID = extractedClipID;
+                }
+            }
+        }
+
+        await this.cleanupClip(channelID, clipID || 'unknown');
+        await this.processNextClip(channelID);
     }
 
     async cleanupOldQueueData(channelID: string): Promise<void> {

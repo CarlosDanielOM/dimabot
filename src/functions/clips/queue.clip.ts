@@ -54,18 +54,33 @@ export async function requestClip(channelID: string, streamerLogin: string, clip
         }
 
         const cacheClient = await getDragonflyClient('requestClip');
-        const clipID = generateRandomClipID();
+        
+        // Check if queue is empty or nothing is processing
+        const queueLength = await cacheClient.zCard(`twitch:${channelID}:clips:queue`);
+        const isProcessing = await cacheClient.exists(`twitch:${channelID}:clip:processing`);
+        
+        // Auto-process if queue is empty OR nothing is currently processing
+        if (!autoProcess && (queueLength === 0 || !isProcessing)) {
+            autoProcess = true;
+        }
 
-        const timestamp = Date.now();
+        const clipID = clipData.clipID ? clipData.clipID : generateRandomClipID();
+        
+        // Ensure clipData has the clipID and timestamp
+        const clipDataWithID = {
+            ...clipData,
+            clipID: clipID,
+            timestamp: Date.now()
+        };
 
-        await cacheClient.set(`twitch:${channelID}:clips:queue:data:${clipID}`, JSON.stringify(clipData));
+        await cacheClient.set(`twitch:${channelID}:clips:queue:data:${clipID}`, JSON.stringify(clipDataWithID));
         await cacheClient.zAdd(`twitch:${channelID}:clips:queue`, {
-            score: timestamp,
+            score: clipDataWithID.timestamp,
             value: clipID
         });
 
         if (autoProcess) {
-            await pubSubManager.publishClipRequest(channelID, clipData);
+            await pubSubManager.publishClipRequest(channelID, clipDataWithID);
         }
 
         return {
