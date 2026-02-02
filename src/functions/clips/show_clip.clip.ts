@@ -101,34 +101,55 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
         const clipGameResult = await searchGameById(randomClip.game_id);
 
         if (clipGameResult.error || !clipGameResult.data) {
-            console.error(`Error in showClip: Game data missing`, {
+            console.error(`Error in showClip: Game data not found, using fallback`, {
                 channelID,
-                gameID: randomClip.game_id
+                gameID: randomClip.game_id,
+                searchResult: clipGameResult
             });
 
+            const gameData: any = {
+                id: randomClip.game_id,
+                name: 'Unknown Game',
+                box_art_url: ''
+            };
+
+            const connectionResult = await checkClipConnection(channelID);
+
+            if (!connectionResult.connected) {
+                console.log(`showClip skipped - OBS not connected for channel ${channelID}`);
+                return {
+                    error: false,
+                    message: 'Skipped - OBS not connected'
+                };
+            }
+
+            const clipID = generateRandomClipID();
+
+            const clipRequestData = {
+                clipID: clipID,
+                streamerLogin: streamerData.login,
+                duration: duration,
+                clipUrl: clipUrl,
+                title: streamerChannelData.title,
+                game: 'Unknown Game',
+                streamer: streamerData.display_name,
+                profileImage: streamerData.profile_image_url,
+                description: streamerData.description,
+                streamerColor: streamerColor,
+                timestamp: Date.now()
+            };
+
+            await requestClip(channelID, streamerData.login, clipRequestData, sendToQueue);
+
             return {
-                error: true,
-                message: 'Game data missing',
-                status: 500,
-                type: 'game_data_missing'
+                error: false,
+                message: sendToQueue ? 'Clip queued and processing' : 'Clip queued'
             };
         }
 
         let gameData: any;
         if (clipGameResult.data) {
             gameData = clipGameResult.data;
-        } else {
-            console.error(`Error in showClip: Game data is undefined`, {
-                channelID,
-                gameID: randomClip.game_id
-            });
-
-            return {
-                error: true,
-                message: 'Game data is undefined',
-                status: 500,
-                type: 'game_data_undefined'
-            };
         }
 
         const connectionResult = await checkClipConnection(channelID);
