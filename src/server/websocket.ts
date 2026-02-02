@@ -61,7 +61,7 @@ export const websocket = async (app: any): Promise<Server | null> => {
 
             // Handle heartbeat/ping from OBS
             socket.on('ping', async () => {
-                await cacheClient.set('twitch:\${channelID}:clips:last_activity', Date.now());
+                await cacheClient.set(`twitch:${channelID}:clips:last_activity`, Date.now());
             });
 
             // Handle disconnect with 30s delay
