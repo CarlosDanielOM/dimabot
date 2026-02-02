@@ -25,7 +25,6 @@ export const websocket = async (app: any): Promise<Server | null> => {
             const cacheClient = await getDragonflyClient('Websocket');
             const channelID = socket.nsp.name.split('/')[2];
 
-            // Validate channel
             const account = await TwitchStreamers.getTwitchAccountById(channelID);
             if(!account) {
                 socket.emit('error', {
@@ -37,14 +36,14 @@ export const websocket = async (app: any): Promise<Server | null> => {
 
             // Cleanup old processing flag
             try {
-                await cacheClient.del('twitch:\${channelID}:clip:processing');
+                await cacheClient.del(`twitch:${channelID}:clip:processing`);
             } catch (error) {
-                console.error('Error deleting old processing flag for \${channelID}:', error);
+                console.error(`Error deleting old processing flag for ${channelID}:`, error);
             }
 
             // Set connection flag
-            await cacheClient.set('twitch:\${channelID}:clips:connected', "true");
-            console.log('\${channelID} (\${account.name}) connected to clip');
+            await cacheClient.set(`twitch:${channelID}:clips:connected`, "true");
+            console.log(`${channelID} (${account.name}) connected to clip`);
 
             // Subscribe to clip requests for this channel
             await clipQueueHandler.subscribeToChannel(channelID);
@@ -98,19 +97,19 @@ export const websocket = async (app: any): Promise<Server | null> => {
         // Setup stale connection cleanup job
         setInterval(async () => {
             try {
-                const allChannels = await TwitchStreamers.getTwitchAccounts();
+                const allChannels = await TwitchStreamers.getTwitchAccountsFromDB();
                 if (allChannels && allChannels.length > 0) {
                     for (const channel of allChannels) {
-                        const lastActivity = await cacheClient.get('twitch:\${channel.id}:clips:last_activity');
+                        const lastActivity = await cacheClient.get(`twitch:${channel.id}:clips:last_activity`);
                         
                         if (lastActivity) {
                             const lastActivityTime = parseInt(lastActivity);
                             const inactiveTime = Date.now() - lastActivityTime;
                             
                             if (inactiveTime > 60000) {
-                                await cacheClient.del('twitch:\${channel.id}:clips:connected');
-                                await cacheClient.del('twitch:\${channel.id}:clips:processing');
-                                console.log('\${channel.id} (\${channel.name}) marked as inactive (no heartbeat for 60s)');
+                                await cacheClient.del(`twitch:${channel.id}:clips:connected`);
+                                await cacheClient.del(`twitch:${channel.id}:clips:processing`);
+                                console.log(`${channel.id} (${channel.name}) marked as inactive (no heartbeat for 60s)`);
                             }
                         }
                     }
