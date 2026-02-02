@@ -1,6 +1,7 @@
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import ChatHistory from "../classes/chat_history.js";
 import { commandHandler } from "./commands.handler.js";
+import { promo } from "../functions/promo/chat.promo.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
 
@@ -52,6 +53,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         let commandCD = '0';
         let commandEnabled = 'false';
         let commandLevel = '0';
+        const streamerArgument = argument ? argument.trim() : '';
 
         let commandDBData = await Commands.getCommandFromDB(channelID, command);
         if(!commandDBData.error && commandDBData.command) {
@@ -73,6 +75,18 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         switch(commandFunc) {
             case 'sumimetro':
                 res = await indexCommands.sumimetro(channelID, messageEventData.chatter_user_login!, messageEventData.message.text.split(`!${command}`)[1].trim(), command);
+                break;
+            case 'promo':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Please provide a streamer name to promo. Usage: !promo <streamer>' };
+                    break;
+                }
+                const promoResult = await promo(channelID, streamerArgument, true);
+                if (!promoResult.error) {
+                    res = { error: false, message: `Promo for ${streamerArgument} queued successfully!` };
+                } else {
+                    res = { error: true, message: promoResult.message || 'Failed to promo streamer' };
+                }
                 break;
             default:
                 const cmdResult = await commandHandler(channelID, messageEventData, command, argument);
