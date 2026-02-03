@@ -3,6 +3,7 @@ import { getChannelInformation } from '../functions/channels/index.js';
 import { promo } from '../functions/promo/index.js';
 import { sendAnnouncement } from '../functions/chats/index.js';
 import { sendShoutout } from '../functions/chats/index.js';
+import { parseSpecialCommands } from './special_parser.handler.js';
 import type { IEventsub } from '../schemas/eventsub.schema.js';
 
 interface RaidEventData {
@@ -109,7 +110,22 @@ export async function raidHandler(
             };
         }
 
-        const message = `Check out ${raiderChannel.name} at https://twitch.tv/${raiderChannel.login} and give them a follow! They were last playing ${raiderChannel.game}`;
+        // Get raw message template (may contain special commands like $(user), $(twitch.game), etc.)
+        const rawMessage = eventsubData.message || `Check out ${raiderChannel.name} at https://twitch.tv/${raiderChannel.login} and give them a follow! They were last playing ${raiderChannel.game}`;
+
+        // Parse special commands in the message
+        // The parser will auto-extract user info, broadcaster info, and viewers from eventData
+        // We only need to pass game in extraContext since it comes from an API call
+        const parsedResult = await parseSpecialCommands(rawMessage, {
+            channelID: to_broadcaster_user_id,
+            eventData: eventData,
+            eventsubData: eventsubData,
+            extraContext: {
+                game: raiderChannel.game
+            }
+        });
+
+        const message = parsedResult.parsedText;
 
         const announcementResult = await sendAnnouncement(
             to_broadcaster_user_id,
@@ -146,7 +162,7 @@ export async function raidHandler(
                 shoutoutResult
             });
 
-            return {
+            return {           
                 error: true,
                 message: shoutoutResult.message || 'Failed to send shoutout',
                 status: shoutoutResult.status,
