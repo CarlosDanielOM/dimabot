@@ -4,20 +4,7 @@ import { formatBadges, type IBadge } from '../../badges.js';
 import { getDragonflyClient } from '../../databases/dragonfly.database.js';
 import { ingestPolarSHEvent } from '../../polarsh.js';
 import { constructChatSystemMessages } from '../prompts.ai.js';
-
-// ============================================================================
-// CONSTANTS
-// ============================================================================
-
-const MODELS = {
-    free: 'sao10k/l3-lunaris-8b:nitro',
-    premium: 'nousresearch/hermes-4-70b:nitro',
-    pro: 'minimax/minimax-m2-her:nitro'
-} as const;
-
-const TOKEN_LIMITS = {
-    default: 1500
-} as const;
+import { MODELS, TOKEN_LIMITS } from '../constants.js';
 
 // ============================================================================
 // INTERFACES

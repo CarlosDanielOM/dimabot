@@ -2,6 +2,7 @@ import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import ChatHistory from "../classes/chat_history.js";
 import { commandHandler } from "./commands.handler.js";
 import { promo } from "../functions/promo/chat.promo.js";
+import { router as aiRouter } from "../utils/ai/openrouter/router.ai.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
 
@@ -43,9 +44,30 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         const [raw, command, argument] = messageEventData.message.text.match(commandsRegex) || [];
 
         if(!command) {
-            //* TODO: AI response
             if(messageEventData.message.text.startsWith('@domdimabot') || messageEventData.message.text.startsWith('@DomDimaBot') || messageEventData.message.text.includes('@domdimabot') || messageEventData.message.text.includes('@DomDimaBot')) {
-                sendTwitchChatMessage(channelID, 'Ando en mantenimiento, un bug cibernetico se comio mis circuitos');
+                if(!STREAMER) return;
+                
+                const recentMessages = await ChatHistory.getRecentMessages(channelID, STREAMER.plan_tier === 'pro' ? 15 : 7);
+                const chatHistory = recentMessages.map((msg: any) => ({
+                    timestamp: msg.timestamp,
+                    badges: msg.badges ? msg.badges.join(' ') : undefined,
+                    username: msg.username,
+                    message: msg.message
+                }));
+                
+                const aiResponse = await aiRouter(
+                    channelID,
+                    messageEventData.message.text.replace('@domdimabot', '').replace('@DomDimaBot', ''),
+                    '@preset/router',
+                    chatHistory,
+                    { badges: messageEventData.badges, username: messageEventData.chatter_user_name },
+                    [],
+                    STREAMER
+                );
+                
+                if (!aiResponse.error && aiResponse.message) {
+                    sendTwitchChatMessage(channelID, aiResponse.message);
+                }
             }
         }
 

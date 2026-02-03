@@ -8,7 +8,7 @@ const banUser = require('../function/moderation/ban');
 const categories = require('../function/search/categories');
 const { getUserByLogin } = require('../function/user/getuser');
 const addVIPCommand = require('../command/addvip');
-const { executeAiCommand } = require('../util/ai/openrouter/command');
+const { executeAiCommand } = require('../src/utils/ai/openrouter/command.ai.js');
 
 // ============================================================================
 // 1. MANIFEST & PLANS - Monetization Preparation
