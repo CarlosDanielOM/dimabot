@@ -19,7 +19,7 @@ class ChatHistory {
                 return;
             }
 
-            const key = `${channelID}:${platform}:chat:history`;
+            const key = `${platform}:${channelID}:chat:history`;
             const messageData = JSON.stringify({ username, message:message, timestamp: Date.now(), badges: formattedBadges });
             
             // Add new message
@@ -43,7 +43,7 @@ class ChatHistory {
                 return [];
             }
 
-            const key = `${channelID}:${platform}:chat:history`;
+            const key = `${platform}:${channelID}:chat:history`;
             const messages = await cache.lRange(key, 0, limit - 1);
 
             return messages.map(msg => JSON.parse(msg));
@@ -63,7 +63,7 @@ class ChatHistory {
                 return;
             }
 
-            const key = `${channelID}:${platform}:chat:history`;
+            const key = `${platform}:${channelID}:chat:history`;
             await cache.del(key);
         } catch (error) {
             console.error('Error clearing chat history:', error);

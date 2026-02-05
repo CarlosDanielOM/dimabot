@@ -77,11 +77,12 @@ interface IEventPowerUp {
     message_effect_id?: string;
 }
 
-interface IBitUseEvent extends ITwitchEventBase {
+export interface IBitUseEvent extends ITwitchEventBase {
     bits: number;
     type: 'cheer' | 'power_up';
     message?: IEventMessage;
     power_up?: IEventPowerUp;
+    is_anonymous?: boolean;
 }
 
 interface IBadge {

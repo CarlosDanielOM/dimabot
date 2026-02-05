@@ -3,6 +3,8 @@ import ChatHistory from "../classes/chat_history.js";
 import { commandHandler } from "./commands.handler.js";
 import { promo } from "../functions/promo/chat.promo.js";
 import { router as aiRouter } from "../utils/ai/openrouter/router.ai.js";
+import { handleShoutoutCommand } from "../commands/shoutout.command.js";
+import { formatBadges } from "../utils/badges.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
 
@@ -30,6 +32,10 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
 
         const userLevel = await giveUserLevel(channelID, messageEventData);
 
+        const formattedBadges = await formatBadges({ badges: messageEventData.badges });
+
+        await ChatHistory.addMessage(channelID, messageEventData.chatter_user_name!, messageEventData.message.text, formattedBadges.badgeList);
+
         let on_cooldown = false;
         if(!CHANNEL_INSTANCES.has(channelID)) {
             CHANNEL_INSTANCES.set(channelID, new COOLDOWN());
@@ -46,6 +52,8 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         if(!command) {
             if(messageEventData.message.text.startsWith('@domdimabot') || messageEventData.message.text.startsWith('@DomDimaBot') || messageEventData.message.text.includes('@domdimabot') || messageEventData.message.text.includes('@DomDimaBot')) {
                 if(!STREAMER) return;
+
+                if (STREAMER.name == 'ozbellvt' || STREAMER.name == 'littlehuntervt') return;
                 
                 const recentMessages = await ChatHistory.getRecentMessages(channelID, STREAMER.plan_tier === 'pro' ? 15 : 7);
                 const chatHistory = recentMessages.map((msg: any) => ({
@@ -104,10 +112,18 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     break;
                 }
                 const promoResult = await promo(channelID, streamerArgument, true);
-                if (!promoResult.error) {
-                    res = { error: false, message: `Promo for ${streamerArgument} queued successfully!` };
-                } else {
+                if (promoResult.error) {
                     res = { error: true, message: promoResult.message || 'Failed to promo streamer' };
+                }
+                break;
+            case 'shoutout':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Please provide a user to shoutout. Usage: !so <username>' };
+                    break;
+                }
+                const shoutoutResult = await handleShoutoutCommand(channelID, streamerArgument, 'purple', '698614112', true);
+                if (shoutoutResult.error) {
+                    res = { error: true, message: shoutoutResult.message || 'Failed to send shoutout' };
                 }
                 break;
             default:
@@ -122,21 +138,21 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
             channelInstance!.setCooldown(command, parseInt(commandCD! ?? '0', 10));
         }
 
-        if(commandEnabled !== 'true') {
-            tries++; 
-            if(tries % 50 == 0) {
-                sendTwitchChatMessage(channelID, 'Ando en mantenimiento, un bug cibernetico se comio mis circuitos');
-            }
-            return;
-        };
+        // if(commandEnabled !== 'true') {
+        //     tries++; 
+        //     if(tries % 50 == 0) {
+        //         sendTwitchChatMessage(channelID, 'Ando en mantenimiento, un bug cibernetico se comio mis circuitos');
+        //     }
+        //     return;
+        // };
 
-        if(res!.error) {
+        if(res && res.error) {
             // logger({error: true, message: res.message, response: res, username: messageEventData.chatter_user_name, channel: messageEventData.channel_name}, true, channelID, `command-${channelID}-${command}-${messageEventData.chatter_user_name}`);
         }
-        
-        if(!res!.message) return;
-        
-        sendTwitchChatMessage(channelID, res!.message)
+
+        if(!res || !res.message) return;
+
+        sendTwitchChatMessage(channelID, res.message)
     } catch (error) {
         console.error(error, 'MessageHandler');
     }

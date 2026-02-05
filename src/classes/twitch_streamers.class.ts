@@ -42,7 +42,7 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
             
-            const result = await UsersSchema.find<IUsers>({ 'accounts.type': 'twitch' }).select('accounts plan_tier').lean();
+            const result = await UsersSchema.find<IUsers>({ 'accounts.type': 'twitch' }).select('accounts plan_tier polar_sh_customer_id').lean();
 
             cache.del(`streamers:by:name`);
             await cache.del('twitch:accounts');
@@ -55,6 +55,7 @@ class TwitchStreamers {
                     email: twitchAccount?.email ?? '',
                     plan_tier: user.plan_tier ?? 'free',
                     plan_tier_until: user.plan_tier_until ? new Date(user.plan_tier_until).toDateString() : "",
+                    polar_sh_customer_id: user.polar_sh_customer_id ?? '',
                     refresh_token: decrypt(twitchAccount!.refresh_token) ?? '',
                     access_token: decrypt(twitchAccount!.access_token) ?? '',
                     actived: twitchAccount?.actived ? 'true' : 'false',

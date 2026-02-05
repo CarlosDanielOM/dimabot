@@ -107,7 +107,7 @@ async function getChannelPersonality(channelID: string): Promise<IChannelAIPerso
     const streamer = await TwitchStreamers.getTwitchAccountById(channelID);
 
     // Try cache first
-    let personality = await cacheClient.get(`${channelID}:chatbot:personality`);
+    let personality = await cacheClient.get(`twitch:${channelID}:chatbot:personality`);
     if (personality) {
         return JSON.parse(personality) as unknown as IChannelAIPersonality;
     }
@@ -115,7 +115,7 @@ async function getChannelPersonality(channelID: string): Promise<IChannelAIPerso
     // Try database
     const dbPersonality = await ChannelAIPersonalitySchema.findOne({ channelID: channelID });
     if (dbPersonality) {
-        await cacheClient.set(`${channelID}:chatbot:personality`, JSON.stringify(dbPersonality));
+        await cacheClient.set(`twitch:${channelID}:chatbot:personality`, JSON.stringify(dbPersonality));
         return dbPersonality;
     }
 
@@ -140,7 +140,7 @@ async function getChannelPersonality(channelID: string): Promise<IChannelAIPerso
     });
 
     if (newPersonality) {
-        await cacheClient.set(`${channelID}:chatbot:personality`, JSON.stringify(newPersonality));
+        await cacheClient.set(`twitch:${channelID}:chatbot:personality`, JSON.stringify(newPersonality));
     }
 
     return newPersonality;
@@ -195,7 +195,7 @@ export async function AiResponse(
     // Build user context from EventSub message structure
     const { formattedBadges } = await formatBadges({ badges: tags?.badges || [] });
     const userContext = {
-        username: tags?.chatter_user_name || tags?.chatter_user_login || 'Anonymous',
+        username: tags?.username || tags?.chatter_user_name || tags?.chatter_user_login || 'Anonymous',
         badges: formattedBadges
     };
 
@@ -230,7 +230,11 @@ export async function AiResponse(
     const body: any = {
         model: selectedModel,
         messages: messages,
-        max_tokens: maxTokens
+        max_tokens: maxTokens,
+        user: `${channelID}`,
+        usage: {
+            include: true
+        }
     };
 
     // Apply additional options

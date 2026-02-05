@@ -3,7 +3,7 @@ import { getDragonflyClient } from './databases/dragonfly.database.js';
 
 let polarshClient: Polar | null = null;
 
-export async function getPolarShClient(): Promise<Polar> {
+export async function getPolarShClient(caller: string): Promise<Polar> {
     if (polarshClient) return polarshClient;
 
     if (!process.env.POLARSH_OAT) {
@@ -13,6 +13,8 @@ export async function getPolarShClient(): Promise<Polar> {
     polarshClient = new Polar({
         accessToken: process.env.POLARSH_OAT
     });
+
+    console.log(`PolarSH client initialized for ${caller}`);
 
     return polarshClient;
 }
@@ -75,7 +77,7 @@ export async function ingestPolarSHEvent(options: IngestPolarSHEventOptions): Pr
 
     try {
         const cacheClient = await getDragonflyClient('PolarSH');
-        const cacheKey = `${channelID}:ai:polarshevent`;
+        const cacheKey = `twitch:${channelID}:ai:polarshevent`;
 
         let eventData: EventData = {
             name: 'ai_usage',
@@ -130,7 +132,7 @@ export async function ingestPolarSHEvent(options: IngestPolarSHEventOptions): Pr
         }
 
         if (mode === 'immediate') {
-            const polarshClientInstance = await getPolarShClient();
+            const polarshClientInstance = await getPolarShClient('ingestPolarSHEvent immediate mode');
             const ingestResult = await polarshClientInstance.events.ingest({
                 events: [eventData]
             }) as any;
@@ -158,7 +160,7 @@ export async function ingestPolarSHEvent(options: IngestPolarSHEventOptions): Pr
             return { error: false };
         }
 
-        const polarshClientInstance = await getPolarShClient();
+        const polarshClientInstance = await getPolarShClient('ingestPolarSHEvent batch/cache mode');
 
         polarshClientInstance.events.ingest({
             events: ingestData

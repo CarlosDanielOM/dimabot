@@ -20,11 +20,13 @@ import { pubSubManager } from '../classes/pubsub_manager.class.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { twitchEventsub } from './eventsub.twitch.js';
 import ChatHistory from '../classes/chat_history.js';
+import { getPolarShClient } from '../utils/polarsh.js';
 //? TODO: Add other eventsub imports
 
 await getDragonflyClient('Bot');
 await getMongoDBConnection('Bot');
 await getQdrantConnection('Bot');
+await getPolarShClient('Bot');
 
 // Initialize PubSub for clip queue
 await pubSubManager.init();

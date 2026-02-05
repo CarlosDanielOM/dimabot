@@ -28,6 +28,7 @@ interface PredictionData {
     predictionStatus: string;
     winning_outcome_id?: string;
     winning_outcome?: PredictionOutcome;
+    status?: string;
 }
 
 interface GetPredictionResponse {
@@ -118,7 +119,8 @@ export async function getPrediction(channelID: string, predictionID: string | nu
             outcomes: outcomes,
             channelID: prediction.broadcaster_id,
             channel: prediction.broadcaster_login,
-            predictionStatus: prediction.status
+            predictionStatus: prediction.status,
+            status: prediction.status
         };
 
         if (prediction.winning_outcome_id) {

@@ -19,11 +19,12 @@ import { pubSubManager } from '../classes/pubsub_manager.class.js';
 import { server } from './server.js';
 import { websocket } from './websocket.js';
 import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
+import { getPolarShClient } from '../utils/polarsh.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
 await getQdrantConnection('Server');
-
+await getPolarShClient('Server');
 // Initialize PubSub for clip queue
 await pubSubManager.init();
 
