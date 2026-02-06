@@ -1,5 +1,7 @@
 import { addChannelVIP } from '../functions/channels/index.js';
 import { getTwitchUserByLogin } from '../functions/users/index.js';
+import TwitchStreamers from '../classes/twitch_streamers.class.js';
+import { VipSchema } from '../schemas/vip.schema.js';
 
 interface AddVipResponse {
     error: boolean;
@@ -45,37 +47,90 @@ export async function addVipCommand(channelID: string, argument: string, tags: a
             };
         }
 
-        // VIP schema feature commented out - vipSchema not migrated yet
-        // if (duration) {
-        //     if (isNaN(duration)) {
-        //         return {
-        //             error: true,
-        //             message: 'Invalid duration',
-        //             status: 400,
-        //             type: 'invalid_duration'
-        //         };
-        //     }
-        //
-        //     if (duration < 1) {
-        //         return {
-        //             error: true,
-        //             message: 'Duration must be at least 1 day',
-        //             status: 400,
-        //             type: 'duration_too_short'
-        //         };
-        //     }
-        //
-        //     if (duration > 365) {
-        //         return {
-        //             error: true,
-        //             message: 'Duration cannot be longer than 365 days',
-        //             status: 400,
-        //             type: 'duration_too_long'
-        //         };
-        //     }
-        //
-        //     // VIP schema save commented out
-        // }
+        if (duration) {
+            const durationNum = parseInt(duration);
+
+            if (isNaN(durationNum)) {
+                return {
+                    error: true,
+                    message: 'Invalid duration',
+                    status: 400,
+                    type: 'invalid_duration'
+                };
+            }
+
+            if (durationNum < 1) {
+                return {
+                    error: true,
+                    message: 'Duration must be at least 1 day',
+                    status: 400,
+                    type: 'duration_too_short'
+                };
+            }
+
+            if (durationNum > 365) {
+                return {
+                    error: true,
+                    message: 'Duration cannot be longer than 365 days',
+                    status: 400,
+                    type: 'duration_too_long'
+                };
+            }
+
+            const now = Date.now();
+            const expireTime = now + (durationNum * days);
+            const dateToExpire = new Date(expireTime);
+            const expireDate = {
+                day: dateToExpire.getDate(),
+                month: dateToExpire.getMonth(),
+                year: dateToExpire.getFullYear()
+            };
+
+            const account = await TwitchStreamers.getTwitchAccountById(channelID);
+
+            if (!account) {
+                return {
+                    error: true,
+                    message: 'Streamer account not found',
+                    status: 404,
+                    type: 'account_not_found'
+                };
+            }
+
+            const vipData = {
+                username: userData.login,
+                userID: userData.id,
+                channel: account.name,
+                channelID,
+                duration: durationNum,
+                vip: true,
+                date: {
+                    day: new Date().getDate(),
+                    month: new Date().getMonth(),
+                    year: new Date().getFullYear()
+                },
+                createdAt: new Date(),
+                expireDate,
+                expireTimestamp: new Date(expireTime)
+            };
+
+            try {
+                await VipSchema.create(vipData);
+            } catch (error) {
+                console.error({
+                    error: error instanceof Error ? error.message : String(error),
+                    where: 'addVipCommand',
+                    channel: account.name,
+                    channelID
+                });
+                return {
+                    error: true,
+                    message: 'Error saving VIP data',
+                    status: 500,
+                    type: 'error_saving_vip_data'
+                };
+            }
+        }
 
         return {
             error: false,

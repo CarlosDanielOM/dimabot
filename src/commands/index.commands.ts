@@ -17,6 +17,7 @@ import { duelCommand } from "./duel.command.js";
 import { ruletarusaCommand } from "./ruletarusa.command.js";
 import { miyulootCommand } from "./miyuloot.command.js";
 import { addVipCommand } from "./add_vip.command.js";
+import { removeVipCommand } from "./remove_vip.command.js";
 import { pollCommand } from "./poll.command.js";
 import { predictionCommand } from "./prediction.command.js";
 
@@ -40,6 +41,7 @@ export const indexCommands = {
     ruletarusa: ruletarusaCommand,
     miyuloot: miyulootCommand,
     addVip: addVipCommand,
+    removeVip: removeVipCommand,
     poll: pollCommand,
     prediction: predictionCommand
 }
