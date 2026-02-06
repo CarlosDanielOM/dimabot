@@ -11,7 +11,7 @@ export const MODELS = {
 } as const;
 
 export const TOKEN_LIMITS = {
-    default: 1500
+    default: 10000
 } as const;
 
 export const CODING_MODELS = {
