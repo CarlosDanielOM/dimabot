@@ -11,4 +11,8 @@ export const getUrl = () => {
     return 'http://localhost:3000';
 };
 
+export const getApiUrl = () => {
+    return 'https://api.domdimabot.com';
+};
+
 export { isProduction, isTest, isDev };
