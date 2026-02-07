@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import express from 'express';
 import { eventsubHandler } from '../handlers/eventsub.handler.js';
+import { revocationHandler } from '../handlers/revocation.handler.js';
 import type { ITwitchEventData, ITwitchSubscriptionData } from '../interfaces/twitch/eventsub.interface.js';
 
 export const twitchEventsub = () => {
@@ -23,7 +24,7 @@ export const twitchEventsub = () => {
 
     app.use(express.raw({ type: 'application/json' }));
 
-    app.post('/eventsub', (req, res) => {
+    app.post('/eventsub', async (req, res) => {
         let secret = getSecret();
         let message = getHmacMessage(req);
         let hmac = HMAC_PREFIX + getHmac(secret, message);
@@ -35,22 +36,15 @@ export const twitchEventsub = () => {
             let notification = JSON.parse(req.body);
 
             if (MESSAGE_TYPE_NOTIFICATION === req.headers[MESSAGE_TYPE]) {
-                //* TODO: Add eventsub handler
                 eventsubHandler(notification.subscription as ITwitchSubscriptionData, notification.event as ITwitchEventData);
-
                 res.sendStatus(204);
             } else if (MESSAGE_TYPE_VERIFICATION === req.headers[MESSAGE_TYPE]) {
                 res.set('Content-Type', 'text/plain').status(200).send(notification.challenge);
             } else if (MESSAGE_TYPE_REVOCATION === req.headers[MESSAGE_TYPE]) {
+                revocationHandler(notification.subscription as ITwitchSubscriptionData);
                 res.sendStatus(204);
-
-                console.log(`condition: ${JSON.stringify(notification, null, 4)}`);
-                //* TODO: Add eventsub revocation handler
-                // eventsubRevocationHandler(notification.subscription);
-
             } else {
                 res.sendStatus(204);
-
                 console.log(`Unkonwn message type: ${req.headers[MESSAGE_TYPE]}`)
             }
         } else {

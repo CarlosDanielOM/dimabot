@@ -1,5 +1,27 @@
 import type { ICondition, ITransport } from "../../schemas/eventsub.schema.js";
 
+export interface IRedemptionReward {
+    id: string;
+    title: string;
+    prompt: string;
+    cost: number;
+    should_redemptions_skip_request_queue: boolean;
+}
+
+export interface IRedemptionEvent {
+    id: string;
+    broadcaster_user_id: string;
+    broadcaster_user_login: string;
+    broadcaster_user_name: string;
+    user_id: string;
+    user_login: string;
+    user_name: string;
+    reward: IRedemptionReward;
+    user_input: string;
+    status: string;
+    redeemed_at: string;
+}
+
 interface ITwitchUser {
     user_id: string;
     user_name: string;
@@ -131,5 +153,66 @@ export interface IRaidEventData extends ITwitchEventBase {
     from_broadcaster_user_name: string;
 }
 
-export type ITwitchEventData = IBitUseEvent | IChatMessage | IRaidEventData;
+export interface IFollowEvent {
+    user_id: string;
+    user_name: string;
+    user_login: string;
+    broadcaster_user_id: string;
+    broadcaster_user_name: string;
+    broadcaster_user_login: string;
+    followed_at: string;
+}
+
+export interface IStreamOnlineEvent {
+    broadcaster_user_id: string;
+    broadcaster_user_name: string;
+    broadcaster_user_login: string;
+    started_at: string;
+    type: 'live';
+    id: string;
+}
+
+export interface IStreamOfflineEvent {
+    broadcaster_user_id: string;
+    broadcaster_user_name: string;
+    broadcaster_user_login: string;
+}
+
+export interface IAdBreakEvent {
+    broadcaster_user_id: string;
+    broadcaster_user_name: string;
+    broadcaster_user_login: string;
+    requester_user_id: string;
+    requester_user_name: string;
+    requester_user_login: string;
+    duration_seconds: number;
+    started_at: string;
+    is_automatic: boolean;
+}
+
+export interface IBanEvent {
+    broadcaster_user_id: string;
+    broadcaster_user_name: string;
+    broadcaster_user_login: string;
+    user_id: string;
+    user_name: string;
+    user_login: string;
+    moderator_user_id: string;
+    moderator_user_name: string;
+    moderator_user_login: string;
+    reason: string;
+    ends_at: string | null;
+    is_permanent: boolean;
+}
+
+export type ITwitchEventData =
+    | IBitUseEvent
+    | IChatMessage
+    | IRaidEventData
+    | IRedemptionEvent
+    | IFollowEvent
+    | IStreamOnlineEvent
+    | IStreamOfflineEvent
+    | IAdBreakEvent
+    | IBanEvent;
 export type ITwitchSubscriptionData = ITwitchSubscription;

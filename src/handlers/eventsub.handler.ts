@@ -1,10 +1,17 @@
 import ChatHistory from "../classes/chat_history.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
-import type { IChatMessage, ITwitchEventData, ITwitchSubscriptionData, IRaidEventData } from "../interfaces/twitch/eventsub.interface.js";
+import type { IChatMessage, ITwitchEventData, ITwitchSubscriptionData, IRaidEventData, IBitUseEvent, IRedemptionEvent, IFollowEvent, IStreamOnlineEvent, IStreamOfflineEvent, IAdBreakEvent, IBanEvent } from "../interfaces/twitch/eventsub.interface.js";
 import EventsubSchema, { type IEventsub } from "../schemas/eventsub.schema.js";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import { messageHandler } from "./message.handler.js";
 import { raidHandler } from "./raid.handler.js";
+import { cheerHandler } from "./cheer.handler.js";
+import { redemptionHandler } from "./redemption.handler.js";
+import { followHandler } from "./follow.handler.js";
+import { streamOnlineHandler } from "./stream_online.handler.js";
+import { streamOfflineHandler } from "./stream_offline.handler.js";
+import { adBreakHandler } from "./ad_break.handler.js";
+import { banHandler } from "./ban.handler.js";
 import { info as logInfo } from "../utils/logger.js";
 //* TODO Redeem handler
 //* TODO Functions
@@ -16,9 +23,9 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
     let chatEnabled = true;
     let STREAMER = await TwitchStreamers.getTwitchAccountById(eventData?.broadcaster_user_id ?? '');
     if(!STREAMER) {
-        STREAMER = await TwitchStreamers.getTwitchAccountById(eventData?.to_broadcaster_user_id ?? '');
+        STREAMER = await TwitchStreamers.getTwitchAccountById((eventData as IRaidEventData)?.to_broadcaster_user_id ?? '');
         if(!STREAMER) {
-            console.log({error: 'Streamer not found', user_id: eventData?.broadcaster_user_id ?? eventData?.to_broadcaster_user_id}, `(${eventData?.broadcaster_user_name ?? eventData?.to_broadcaster_user_name})`);
+            console.log({error: 'Streamer not found', user_id: eventData?.broadcaster_user_id ?? (eventData as IRaidEventData)?.to_broadcaster_user_id}, `(${eventData?.broadcaster_user_name ?? (eventData as IRaidEventData)?.to_broadcaster_user_name})`);
             return;
         }
     }
@@ -70,6 +77,28 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
             break;
         case 'channel.raid':
             await raidHandler(eventData as IRaidEventData, eventsubData);
+            break;
+        case 'channel.bit.use':
+        case 'channel.cheer':
+            await cheerHandler(eventData as IBitUseEvent, eventsubData, chatEnabled);
+            break;
+        case 'channel.channel_points_custom_reward_redemption.add':
+            redemptionHandler(eventData as IRedemptionEvent, chatEnabled);
+            break;
+        case 'channel.follow':
+            followHandler(eventData as IFollowEvent, eventsubData, chatEnabled);
+            break;
+        case 'stream.online':
+            streamOnlineHandler(eventData as IStreamOnlineEvent, eventsubData, chatEnabled);
+            break;
+        case 'stream.offline':
+            streamOfflineHandler(eventData as IStreamOfflineEvent, eventsubData, chatEnabled);
+            break;
+        case 'channel.ad_break.begin':
+            adBreakHandler(eventData as IAdBreakEvent, eventsubData, chatEnabled);
+            break;
+        case 'channel.ban':
+            banHandler(eventData as IBanEvent, eventsubData, chatEnabled);
             break;
     }
 }

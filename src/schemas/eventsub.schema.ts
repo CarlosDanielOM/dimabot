@@ -41,6 +41,7 @@ export interface IEventsub {
     clipEnabled: boolean;
     delay: number;
     cheerTiers: ICheerTiers[];
+    todayFollows?: boolean;
 }
 
 const eventsubSchema = new Schema<IEventsub>({
@@ -63,6 +64,7 @@ const eventsubSchema = new Schema<IEventsub>({
     clipEnabled: { type: Boolean, default: false },
     delay: { type: Number, default: 0 },
     cheerTiers: { type: [Object], default: [] },
+    todayFollows: { type: Boolean, default: false },
 });
 
 const EventsubSchema = model('eventsub', eventsubSchema);
