@@ -1,6 +1,6 @@
-import { getDragonflyClient } from './databases/dragonfly.database.js';
-import { error, info } from './logger.js';
-import { processSubscriptionReward, PRODUCT_IDS } from './referral.js';
+import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error, info } from '../utils/logger.js';
+import { processSubscriptionReward, PRODUCT_IDS } from '../utils/referral.js';
 import UsersSchema from '../schemas/users.schema.js';
 
 const AI_USAGE_METER_ID = '01d90c16-87d0-4e31-880a-4045a8da90cd';
