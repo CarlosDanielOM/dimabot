@@ -30,6 +30,9 @@ export interface IUsers {
     refreshed_at: Date;
     created_at: Date;
     updated_at: Date;
+    referrerId?: Types.ObjectId;
+    referralCodeUsed?: string;
+    tokenBalance?: number;
 }
 
 const accountsSchema = new Schema<IAccounts>({
@@ -59,6 +62,9 @@ const usersSchema = new Schema<IUsers>({
     plan_tier: { type: String, default: 'free', enum: ['free', 'premium', 'pro'] },
     plan_tier_until: { type: Date, default: null },
     refreshed_at: { type: Date, default: Date.now },
+    referrerId: { type: Schema.Types.ObjectId, ref: 'users', default: null },
+    referralCodeUsed: { type: String, default: null },
+    tokenBalance: { type: Number, default: 0 },
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }})
 
 const UsersSchema = model('users', usersSchema);
