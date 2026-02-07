@@ -69,11 +69,11 @@ export async function getChannelEditors(channelID: string, cache: boolean = fals
 
             if (cache) {
                 if (!reset) {
-                    await cacheClient.del(`${channelID}:channel:editors`);
+                    await cacheClient.del(`twitch:${channelID}:editors`);
                     reset = true;
                 }
-                await cacheClient.sAdd(`${channelID}:channel:editors`, editor.user_name.toLowerCase());
-                await cacheClient.expire(`${channelID}:channel:editors`, 60 * 60 * 24);
+                await cacheClient.sAdd(`twitch:${channelID}:editors`, editor.user_name.toLowerCase());
+                await cacheClient.expire(`twitch:${channelID}:editors`, 60 * 60 * 24);
             }
 
             editorList.push(editorData);
