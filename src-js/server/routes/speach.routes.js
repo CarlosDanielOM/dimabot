@@ -12,14 +12,14 @@ const { getClient } = require('../../../util/database/dragonfly');
 let speachMap = new Map();
 
 router.get('/:channelID', (req, res) => {
-    res.status(200).sendFile(`${__dirname}/public/speach.html`);
+    res.status(200).sendFile(`${__dirname}/public/speech.html`);
 });
 
 router.get('/:channelID/:msgID', (req, res) => {
     const channelID = req.params.channelID;
     const msgID = req.params.msgID;
 
-    res.status(200).sendFile(`${__dirname}/public/speach/${msgID}.mp3`);
+    res.status(200).sendFile(`${__dirname}/public/speech/${msgID}.mp3`);
 });
 
 router.post('/:channelID', async (req, res) => {
@@ -32,8 +32,8 @@ router.post('/:channelID', async (req, res) => {
     let cacheClient = getClient();
 
     let messages = await cacheClient.scard(`${channelID}:speach`);
-    
-    tts.save(`${__dirname}/public/speach/${msgID}.mp3`, async (err, result) => {
+
+    tts.save(`${__dirname}/public/speech/${msgID}.mp3`, async (err, result) => {
         if(err) {
             console.log(err);
             return res.status(500).send({
@@ -75,11 +75,11 @@ router.post('/:channelID', async (req, res) => {
 //     let newMsgID = channelMap.shift();
 //     speachMap.set(channelID, channelMap);
 
-//     md(`${__dirname}/public/speach/${newMsgID}.mp3`, (err, duration) => {
+//     md(`${__dirname}/public/speech/${newMsgID}.mp3`, (err, duration) => {
 //         if(err) {
 //             console.log(err);
 //             return res.status(500).send({
-//                 error: 'Error getting the duration of the file.',
+//                 error: 'Error getting duration of file.',
 //                 message: err,
 //                 status: 500
 //             });
@@ -88,7 +88,7 @@ router.post('/:channelID', async (req, res) => {
 //         io.of(`/speech/${channelID}`).emit('speach', { id: newMsgID });
 //         //? Removes the file from the folder
 //         setTimeout(() => {
-//             fs.unlinkSync(`${__dirname}/public/speach/${newMsgID}.mp3`);
+//             fs.unlinkSync(`${__dirname}/public/speech/${newMsgID}.mp3`);
 //         }, (duration * 1000) - 1000);
         
 //         //? Send the next speach

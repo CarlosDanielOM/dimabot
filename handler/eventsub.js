@@ -12,14 +12,11 @@ const unVIPExpiredUser = require('../redemption_functions/unvipexpired');
 const startTimerCommands = require('../timer_functions/starttimer');
 const stopTimerCommands = require('../timer_functions/stoptimer');
 const defaultMessages = require('../util/defaultmessage');
-const resetSumimetro = require('../handler_function/resetsumimetro')
-const resetCommandsFromCache = require('../handler_function/resetcommandscache')
 const { getEditors } = require('../function/channel')
 const { getClient } = require('../util/database/dragonfly')
-const resetCacheAtOffline = require('../handler_function/clearcache')
 const logger = require('../util/logger')
-const clearSpeachFiles = require('../handler_function/clearspeachfiles')
-const addCommandsToCache = require('../handler_function/addcommandstocache')
+const { clearChannelCache, resetSumimetro } = require('../src/dist/utils/cache.js')
+const { clearSpeechFiles } = require('../src/dist/utils/speech.js')
 const chatHistory = require('../class/chatHistory')
 const eventsub = require('../schema/eventsub')
 const cheerHandler = require('./cheerhandler')
@@ -71,7 +68,6 @@ async function eventsubHandler(subscriptionData, eventData) {
             }
             defaultMessages(eventData, eventsubData.message, chatEnabled);
             await getEditors(eventData.broadcaster_user_id, true);
-            await addCommandsToCache(eventData.broadcaster_user_id);
             //! SEPARATOR FOR FUNCTIONS
             unVIPExpiredUser(client, eventData);
             await startTimerCommands(eventData);
@@ -83,9 +79,8 @@ async function eventsubHandler(subscriptionData, eventData) {
             resetRedemptionPrice(client, eventData.broadcaster_user_id);
             stopTimerCommands(client, eventData);
             resetSumimetro(eventData.broadcaster_user_id);
-            resetCommandsFromCache(client, eventData.broadcaster_user_id);
-            resetCacheAtOffline(eventData.broadcaster_user_id);
-            clearSpeachFiles(eventData.broadcaster_user_id);
+            clearChannelCache(eventData.broadcaster_user_id);
+            clearSpeechFiles(eventData.broadcaster_user_id);
             await chatHistory.clearHistory(eventData.broadcaster_user_id);
             try {
                 await cacheClient.del(`${eventData.broadcaster_user_id}:channel:editors`);
