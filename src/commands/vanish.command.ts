@@ -3,6 +3,7 @@ import { removeChannelModerator } from '../functions/channels/remove_moderator.c
 import { ban } from '../functions/moderation/index.js';
 import { getTwitchUserByLogin } from '../functions/users/index.js';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error, debug } from '../utils/logger.js';
 
 interface VanishResponse {
     error: boolean;
@@ -42,13 +43,13 @@ export async function vanishCommand(channelID: string, tags: any, modID: string 
             setTimeout(async () => {
                 const addMod = await addModerator(channelID, tags['user-id']);
                 if (addMod.error) {
-                    console.log({
+                    await debug({
                         error: true,
                         message: addMod.message,
                         status: addMod.status,
                         type: addMod.type,
-                        where: 'addMod'
-                    });
+                        where: 'vanishCommand.addMod'
+                    }, { channelId: channelID, destination: 'console' });
                 }
             }, 1000 * 10);
         }
@@ -70,14 +71,14 @@ export async function vanishCommand(channelID: string, tags: any, modID: string 
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in vanishCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'vanishCommand',
             channelID,
             tags,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

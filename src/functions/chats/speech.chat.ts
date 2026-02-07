@@ -1,4 +1,5 @@
 import { getUrl } from '../../utils/dev.js';
+import { error as logError } from "../../utils/logger.js";
 
 interface SpeechResponse {
     error: boolean;
@@ -46,14 +47,13 @@ export async function speach(messageID: string, message: string, channelID: stri
             message: 'Speech sent successfully',
             data: data.data
         };
-    } catch (error) {
-        console.error(`Error in speach:`, {
+    } catch (err) {
+        await logError({ function: 'speach',
             messageID,
             message,
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

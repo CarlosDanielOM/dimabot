@@ -1,4 +1,5 @@
 import { getTwitchBotHeader } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface SendShoutoutResponse {
@@ -51,14 +52,13 @@ export async function sendShoutout(
             error: false,
             message: 'Shoutout sent'
         };
-    } catch (error) {
-        console.error(`Error in sendShoutout:`, {
+    } catch (err) {
+        await logError({ function: 'sendShoutout',
             channelID,
             streamerID,
             moderatorID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

@@ -1,4 +1,5 @@
 import TwitchStreamers from '../../classes/twitch_streamers.class.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchAppHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
@@ -18,8 +19,10 @@ export async function isLive(channelID: string): Promise<LiveChannelsResponse> {
 }
 
 export async function liveChannels(): Promise<LiveChannelsResponse> {
+    let streamerIds: string[] = [];
+    
     try {
-        const streamerIds = await TwitchStreamers.getTwitchStreamers();
+        streamerIds = await TwitchStreamers.getTwitchStreamers();
         const botHeader = await getTwitchAppHeader();
         const params = new URLSearchParams({
             type: 'live'
@@ -59,12 +62,16 @@ export async function liveChannels(): Promise<LiveChannelsResponse> {
             error: false,
             data: data.data
         };
-    } catch (error) {
-        console.error(`Error in liveChannels:`, {
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+    } catch (err) {
+        await logError({
+            function: 'liveChannels',
+            operation: 'get_live_channels',
+            streamersCount: streamerIds.length,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'streams',
+            method: 'GET'
+        }, { destination: 'both' });
 
         return {
             error: true,

@@ -1,4 +1,5 @@
 import { getChannelInformation, setChannelInformation } from '../functions/channels/index.js';
+import { error } from "../utils/logger.js";
 import { searchCategories } from '../functions/search/index.js';
 
 interface GameResponse {
@@ -95,16 +96,16 @@ export async function gameCommand(
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in gameCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'gameCommand',
             channelID,
             argument,
             userLevel,
             commandLevel,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

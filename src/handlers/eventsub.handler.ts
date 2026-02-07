@@ -5,6 +5,7 @@ import EventsubSchema, { type IEventsub } from "../schemas/eventsub.schema.js";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import { messageHandler } from "./message.handler.js";
 import { raidHandler } from "./raid.handler.js";
+import { info as logInfo } from "../utils/logger.js";
 //* TODO Redeem handler
 //* TODO Functions
 
@@ -52,7 +53,11 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
             delay: 0,
             cheerTiers: []
         }
-        console.log({error: 'No data found', type, condition: subscriptionData.condition});
+        await logInfo({
+            message: 'No data found for eventsub',
+            type,
+            condition: subscriptionData.condition
+        }, { channelId: STREAMER.id, destination: 'both' });
         // logger({channelID: STREAMER.id, channel: STREAMER.name, error: 'No data found', type, condition: subscriptionData.condition}, true, STREAMER.id, 'eventsub not found');
         console.log({error: 'No data found', type, condition: subscriptionData.condition});
     }

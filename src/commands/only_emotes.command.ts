@@ -1,5 +1,6 @@
 import { setOnlyEmotes, getOnlyEmotes } from '../functions/chats/index.js';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error } from '../utils/logger.js';
 
 interface OnlyEmotesResponse {
     error: boolean;
@@ -87,14 +88,14 @@ export async function onlyEmotesCommand(channelID: string, argument?: string): P
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in onlyEmotesCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'onlyEmotesCommand',
             channelID,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

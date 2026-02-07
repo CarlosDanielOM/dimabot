@@ -2,6 +2,7 @@ import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 import { getTwitchUserById } from '../users/index.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface AddModeratorResponse {
     status: number;
@@ -92,19 +93,22 @@ export async function addModerator(channelID: string, userID: string = '69861411
             status: 200,
             message: 'Success'
         };
-    } catch (error) {
-        console.error(`Error in addModerator:`, {
+    } catch (err) {
+        await logError({
+            function: 'addModerator',
             channelID,
             userID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'add_twitch_moderator',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'moderation/moderators',
+            method: 'POST'
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             status: 500,
             message: 'Internal server error',
-            error: String(error),
+            error: String(err),
             type: 'error'
         };
     }

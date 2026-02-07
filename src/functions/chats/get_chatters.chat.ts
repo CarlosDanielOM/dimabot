@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface GetChattersResponse {
@@ -51,13 +52,12 @@ export async function getChatters(
             message: 'Success',
             chatters: data.data
         };
-    } catch (error) {
-        console.error(`Error in getChatters:`, {
+    } catch (err) {
+        await logError({ function: 'getChatters',
             channelID,
             moderatorID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

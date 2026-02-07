@@ -1,4 +1,5 @@
 import { getTwitchAppHeader } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface GetUserColorResponse {
@@ -35,12 +36,11 @@ export async function getUserColor(userID: string): Promise<GetUserColorResponse
             error: false,
             color: userData.color
         };
-    } catch (error) {
-        console.error(`Error in getUserColor:`, {
+    } catch (err) {
+        await logError({ function: 'getUserColor',
             userID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

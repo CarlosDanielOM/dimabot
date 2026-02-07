@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface UnraidResponse {
@@ -42,14 +43,12 @@ export async function unraid(channelID: string): Promise<UnraidResponse> {
         const data = await response.json();
 
         return { error: true, message: data.message };
-    } catch (error) {
-        console.error(`Error in unraid:`, {
+    } catch (err) {
+        await logError({ function: 'unraid',
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

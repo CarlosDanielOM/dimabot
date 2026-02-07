@@ -11,6 +11,7 @@ import { ingestPolarSHEvent } from '../../polarsh.js';
 import { sendTwitchChatMessage as sendTwitchChatMessageImport } from '../../../functions/chats/send_message.chat.js';
 import { executeAiCode } from '../sandbox/execute_sandbox.ai.js';
 import { CODING_MODELS } from '../constants.js';
+import { error, debug, info } from '../../logger.js';
 
 const sendTwitchChatMessage = sendTwitchChatMessageImport;
 import path from 'path';
@@ -180,8 +181,8 @@ function loadApiDocumentation(): string {
     try {
         const docPath = path.join(process.cwd(), 'src/utils/ai/sandbox/doc-llm.txt');
         return fs.readFileSync(docPath, 'utf-8');
-    } catch (error) {
-        console.error('[Router] Failed to load API documentation:', error);
+    } catch (err) {
+        error({ function: 'loadApiDocumentation', error: 'Failed to load API documentation', err: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
         return '';
     }
 }
@@ -282,9 +283,9 @@ Provide a structured plan with clear steps.`;
         const plan = data.choices?.[0]?.message?.content || '';
         
         return { plan, error: null };
-    } catch (error) {
-        console.error('[Router] Code planning error:', error);
-        return { plan: null, error: (error as Error).message };
+    } catch (err) {
+        await error({ function: 'generateCodePlan', error: 'Code planning error', err: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
+        return { plan: null, error: (err as Error).message };
     }
 }
 
@@ -420,9 +421,9 @@ ${plan}`;
         code = code.replace(/^```(?:javascript|js)?\n?/i, '').replace(/\n?```$/i, '').trim();
         
         return { code, error: null };
-    } catch (error) {
-        console.error('[Router] Code generation error:', error);
-        return { code: null, error: (error as Error).message };
+    } catch (err) {
+        await error({ function: 'generateCode', error: 'Code generation error', err: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
+        return { code: null, error: (err as Error).message };
     }
 }
 
@@ -459,15 +460,15 @@ async function executeSandbox(
 
         return resultObj;
 
-    } catch (error) {
-        console.error('[Router] Sandbox execution error:', error);
-        
+    } catch (err) {
+        await error({ function: 'executeSandbox', error: 'Sandbox execution error', err: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
+
         const errorResult = {
             result: null,
             logs: [],
-            error: (error as Error).message,
+            error: (err as Error).message,
             executionTime: Date.now() - startTime,
-            timedOut: (error as Error).message.includes('Timed Out')
+            timedOut: (err as Error).message.includes('Timed Out')
         };
 
         return errorResult;
@@ -559,7 +560,7 @@ export async function router(
     try {
         aiDecision = JSON.parse(data.choices[0].message.content);
     } catch (parseError) {
-        console.error('Failed to parse AI decision:', parseError);
+        await error({ function: 'processMessage', error: 'Failed to parse AI decision', err: parseError instanceof Error ? parseError.message : String(parseError) }, { channelId: channelID, destination: 'both' });
         aiDecision = { action: 'respond' };
     }
 
@@ -586,7 +587,7 @@ export async function router(
                 });
             }
         } catch (searchError) {
-            console.error('Search tool error:', searchError);
+            await error({ function: 'processMessage', error: 'Search tool error', err: searchError instanceof Error ? searchError.message : String(searchError) }, { channelId: channelID, destination: 'both' });
         }
     }
 
@@ -600,21 +601,21 @@ export async function router(
 
         try {
             if (isProTier(streamer) && !isExhausted) {
-                console.log(`[Router] Pro tier detected - generating code plan for channel ${channelID}`);
+                debug({ message: '[Router] Pro tier detected - generating code plan', channelID }, { channelId: channelID, destination: 'console' });
                 const username = tags.username || tags.chatter_user_login || 'User';
                 await sendTwitchChatMessage(channelID, `@${username} Creando el plan`);
 
                 const planResult = await generateCodePlan(channelID, userRequest, 'openai/gpt-oss-120b', streamer);
-                
+
                 if (planResult.error) {
-                    console.error('[Router] Plan generation failed:', planResult.error);
+                    await error({ function: 'processMessage', error: 'Plan generation failed', err: planResult.error }, { channelId: channelID, destination: 'both' });
                 } else {
                     plan = planResult.plan;
-                    console.log(`[Router] Plan generated successfully`);
+                    debug({ message: '[Router] Plan generated successfully' }, { channelId: channelID, destination: 'console' });
                 }
             }
 
-            console.log(`[Router] Generating code with model: ${codingModel}`);
+            debug({ message: '[Router] Generating code', model: codingModel }, { channelId: channelID, destination: 'console' });
             const username = tags.username || tags.chatter_user_login || 'User';
             await sendTwitchChatMessage(channelID, `@${username} Generando el código`);
             
@@ -631,30 +632,30 @@ export async function router(
                 });
             } else {
                 generatedCode = codeResult.code;
-                console.log(`[Router] Code generated, executing in sandbox...`);
+                debug({ message: '[Router] Code generated, executing in sandbox' }, { channelId: channelID, destination: 'console' });
 
                 sandboxResult = await executeSandbox(generatedCode!, channelID, streamer);
 
-                console.log(`[Router] Successful sandbox execution - Result: ${sandboxResult.result ? sandboxResult.result.substring(0, 200) + (sandboxResult.result.length > 200 ? '...' : '') : 'null'}, Logs: ${sandboxResult.logs.length} entries, Time: ${sandboxResult.executionTime}ms, Model: ${codingModel}`);
+                debug({ message: '[Router] Successful sandbox execution', result: sandboxResult?.result ? sandboxResult.result.substring(0, 200) + (sandboxResult.result.length > 200 ? '...' : '') : 'null', logs: sandboxResult?.logs.length || 0, executionTime: sandboxResult?.executionTime || 0, model: codingModel }, { channelId: channelID, destination: 'console' });
 
                 toolContext.push({
                     name: 'code_execution',
                     context: {
-                        success: !sandboxResult.error && !sandboxResult.timedOut,
-                        result: sandboxResult.result,
-                        logs: sandboxResult.logs,
-                        error: sandboxResult.error,
-                        executionTime: sandboxResult.executionTime,
-                        timedOut: sandboxResult.timedOut,
+                        success: !sandboxResult?.error && !sandboxResult?.timedOut,
+                        result: sandboxResult?.result,
+                        logs: sandboxResult?.logs,
+                        error: sandboxResult?.error,
+                        executionTime: sandboxResult?.executionTime,
+                        timedOut: sandboxResult?.timedOut,
                         phase: 'execution',
                         hadPlan: !!plan
                     }
                 });
-
-                console.log(`[Router] Sandbox execution completed in ${sandboxResult.executionTime}ms`);
             }
+
+            debug({ message: '[Router] Sandbox execution completed', executionTime: sandboxResult?.executionTime || 0 }, { channelId: channelID, destination: 'console' });
         } catch (codeError) {
-            console.error('[Router] Code action error:', codeError);
+            await error({ function: 'processMessage', error: 'Code action error', err: codeError instanceof Error ? codeError.message : String(codeError) }, { channelId: channelID, destination: 'both' });
             
             toolContext.push({
                 name: 'code_execution',

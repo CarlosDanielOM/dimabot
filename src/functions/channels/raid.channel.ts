@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface RaidResponse {
@@ -40,15 +41,13 @@ export async function raid(channelID: string, streamerID: string): Promise<RaidR
         const data = await response.json();
 
         return data;
-    } catch (error) {
-        console.error(`Error in raid:`, {
+    } catch (err) {
+        await logError({ function: 'raid',
             channelID,
             streamerID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

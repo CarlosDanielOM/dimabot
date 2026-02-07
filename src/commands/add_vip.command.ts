@@ -2,6 +2,7 @@ import { addChannelVIP } from '../functions/channels/index.js';
 import { getTwitchUserByLogin } from '../functions/users/index.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { VipSchema } from '../schemas/vip.schema.js';
+import { error } from '../utils/logger.js';
 
 interface AddVipResponse {
     error: boolean;
@@ -116,13 +117,14 @@ export async function addVipCommand(channelID: string, argument: string, tags: a
 
             try {
                 await VipSchema.create(vipData);
-            } catch (error) {
-                console.error({
-                    error: error instanceof Error ? error.message : String(error),
+            } catch (err) {
+                await error({
+                    function: 'addVipCommand',
+                    error: err instanceof Error ? err.message : String(err),
                     where: 'addVipCommand',
                     channel: account.name,
                     channelID
-                });
+                }, { channelId: channelID, destination: 'both' });
                 return {
                     error: true,
                     message: 'Error saving VIP data',
@@ -136,14 +138,14 @@ export async function addVipCommand(channelID: string, argument: string, tags: a
             error: false,
             message: `${userData.display_name} has been added as a VIP ${duration ? `for ${duration} days` : ''}`
         };
-    } catch (error) {
-        console.error(`Error in addVipCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'addVipCommand',
             channelID,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

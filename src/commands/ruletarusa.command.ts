@@ -3,6 +3,7 @@ import { addModerator } from '../functions/channels/add_moderator.channel.js';
 import { ban } from '../functions/moderation/index.js';
 import { getTwitchUserByLogin } from '../functions/users/index.js';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error, info } from '../utils/logger.js';
 
 interface RuletarusaResponse {
     error: boolean;
@@ -119,7 +120,7 @@ export async function ruletarusaCommand(channelID: string, user: string, isMod: 
             setTimeout(async () => {
                 const addMod = await addModerator(channelID, userData.id);
                 if (addMod.error) {
-                    console.error(addMod);
+                    await error({ function: 'ruletarusaCommand.addModerator', addMod }, { channelId: channelID, destination: 'both' });
                 }
             }, 1000 * timeoutTime + 5000);
         }
@@ -141,15 +142,15 @@ export async function ruletarusaCommand(channelID: string, user: string, isMod: 
             status: 200,
             where: 'dead'
         };
-    } catch (error) {
-        console.error(`Error in ruletarusaCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'ruletarusaCommand',
             channelID,
             user,
             isMod,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

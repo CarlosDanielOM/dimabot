@@ -2,6 +2,7 @@ import { getTwitchUserByLogin } from '../functions/users/index.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { getTwitchStreamerHeaderById } from '../utils/header.js';
 import { getTwitchHelixUrl } from '../utils/links.js';
+import { error as logError } from '../utils/logger.js';
 
 interface FollowageResponse {
     error: boolean;
@@ -116,14 +117,14 @@ export async function followageCommand(channelID: string, user: string): Promise
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in followageCommand:`, {
+    } catch (err) {
+        await logError({
+            function: 'followageCommand',
             channelID,
             user,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface SetChannelInformationResponse {
@@ -57,15 +58,13 @@ export async function setChannelInformation(channelID: string, newInformation: N
             message: 'Channel information modified',
             status: 200
         };
-    } catch (error) {
-        console.error(`Error in setChannelInformation:`, {
+    } catch (err) {
+        await logError({ function: 'setChannelInformation',
             channelID,
             newInformation,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

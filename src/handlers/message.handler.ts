@@ -5,6 +5,7 @@ import { promo } from "../functions/promo/chat.promo.js";
 import { router as aiRouter } from "../utils/ai/openrouter/router.ai.js";
 import { handleShoutoutCommand } from "../commands/shoutout.command.js";
 import { formatBadges } from "../utils/badges.js";
+import { error as logError } from "../utils/logger.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
 
@@ -153,8 +154,11 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         if(!res || !res.message) return;
 
         sendTwitchChatMessage(channelID, res.message)
-    } catch (error) {
-        console.error(error, 'MessageHandler');
+    } catch (err) {
+        await logError({
+            function: 'messageHandler',
+            error: err instanceof Error ? err.message : String(err)
+        }, { channelId: channelID, destination: 'both' });
     }
 }
 

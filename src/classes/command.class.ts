@@ -7,6 +7,7 @@ import type {
     ICommandUpdateResponse,
     ICommandExistsResponse
 } from '../interfaces/commands/command.response.interface.js';
+import { error } from '../utils/logger.js';
 
 type DragonflyClient = Awaited<ReturnType<typeof getDragonflyClient>>;
 
@@ -23,8 +24,8 @@ class Commands {
             const cache = await this.cachePromise;
             const cacheKey = `${channelID}:commands:${cmd}`;
             await cache.del(cacheKey);
-        } catch (error) {
-            console.error(`Error invalidating cache for command ${cmd}: ${error}`);
+        } catch (err) {
+            await error({ function: 'Commands.invalidateCache', cmd, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
         }
     }
 
@@ -64,8 +65,8 @@ class Commands {
                 status: 200,
                 type: 'command_created'
             };
-        } catch (error) {
-            console.error(`Error creating command: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.createCommand', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error creating command',
@@ -98,8 +99,8 @@ class Commands {
                 status: 200,
                 type: 'command_deleted'
             };
-        } catch (error) {
-            console.error(`Error deleting command: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.deleteCommand', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error deleting command',
@@ -144,8 +145,8 @@ class Commands {
                 status: 200,
                 type: 'command_retrieved'
             };
-        } catch (error) {
-            console.error(`Error getting command: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.getCommandFromDB', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error retrieving command',
@@ -190,8 +191,8 @@ class Commands {
                 status: 200,
                 type: 'command_retrieved'
             };
-        } catch (error) {
-            console.error(`Error getting reserved command: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.getReservedCommandFromDB', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error retrieving reserved command',
@@ -236,8 +237,8 @@ class Commands {
                 status: 200,
                 type: 'command_exists'
             };
-        } catch (error) {
-            console.error(`Error checking command existence: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.checkIfCommandExists', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error checking command',
@@ -282,8 +283,8 @@ class Commands {
                 status: 200,
                 type: 'command_exists'
             };
-        } catch (error) {
-            console.error(`Error checking reserved command existence: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.checkIfReservedCommandExists', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error checking command',
@@ -314,8 +315,8 @@ class Commands {
                 status: 200,
                 type: 'command_updated'
             };
-        } catch (error) {
-            console.error(`Error updating command: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.updateCommandInDB', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error updating command',
@@ -346,8 +347,8 @@ class Commands {
                 status: 200,
                 type: 'command_updated'
             };
-        } catch (error) {
-            console.error(`Error updating command count: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.updateCountableCommandInDB', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error updating command',
@@ -378,8 +379,8 @@ class Commands {
                 status: 200,
                 type: 'command_updated'
             };
-        } catch (error) {
-            console.error(`Error updating command availability: ${error} for channelID: ${channelID}`);
+        } catch (err) {
+            await error({ function: 'Commands.updateCommandAvailability', channelID, error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Error updating command',

@@ -1,6 +1,7 @@
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 import { getTwitchAppHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface GetChannelInformationResponse {
     error: boolean;
@@ -55,14 +56,18 @@ export async function getChannelInformation(channelID: string, saveToCache: bool
             error: false,
             data: channelData
         };
-    } catch (error) {
-        console.error(`Error in getChannelInformation:`, {
+    } catch (err) {
+        await logError({
+            function: 'getChannelInformation',
             channelID,
             saveToCache,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'get_channel_information',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'channels',
+            method: 'GET',
+            cacheKey: `channel:data:${channelID}`
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

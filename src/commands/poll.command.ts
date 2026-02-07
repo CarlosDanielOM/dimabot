@@ -1,4 +1,5 @@
 import { createPoll, getPoll, endPoll } from '../functions/polls/index.js';
+import { error as logError } from '../utils/logger.js';
 
 interface PollResponse {
     error: boolean;
@@ -86,15 +87,15 @@ export async function pollCommand(action: string, channelID: string, argument?: 
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in pollCommand:`, {
+    } catch (err) {
+        await logError({
+            function: 'pollCommand',
             action,
             channelID,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

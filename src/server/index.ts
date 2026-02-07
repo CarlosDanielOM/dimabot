@@ -20,6 +20,7 @@ import { server } from './server.js';
 import { websocket } from './websocket.js';
 import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
 import { getPolarShClient } from '../utils/polarsh.js';
+import { info, error } from '../utils/logger.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
@@ -45,9 +46,9 @@ const websocketServer = await websocket(app);
 
 if (websocketServer) {
     websocketServer.listen(3000, () => {
-        console.log('Server listening on port 3000');
+        info({ message: 'Server listening on port 3000' }, { destination: 'console' });
     });
 } else {
-    console.error('Failed to initialize websocket server');
+    await error({ message: 'Failed to initialize websocket server' }, { destination: 'both' });
     process.exit(1);
 }

@@ -1,4 +1,5 @@
 import { createPrediction, getPrediction, endPrediction } from '../functions/predictions/index.js';
+import { error as logError } from '../utils/logger.js';
 
 interface PredictionResponse {
     error: boolean;
@@ -145,15 +146,15 @@ export async function predictionCommand(action: string, channelID: string, argum
                 type: 'success'
             };
         }
-    } catch (error) {
-        console.error(`Error in predictionCommand:`, {
+    } catch (err) {
+        await logError({
+            function: 'predictionCommand',
             action,
             channelID,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

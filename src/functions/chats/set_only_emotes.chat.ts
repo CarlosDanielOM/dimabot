@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface SetOnlyEmotesResponse {
@@ -58,14 +59,13 @@ export async function setOnlyEmotes(
             status: 200,
             data: chatSettings
         };
-    } catch (error) {
-        console.error(`Error in setOnlyEmotes:`, {
+    } catch (err) {
+        await logError({ function: 'setOnlyEmotes',
             channelID,
             emotes,
             modID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

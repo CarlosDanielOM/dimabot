@@ -1,3 +1,4 @@
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from "../../utils/links.js";
 import { getAppToken } from "../../utils/tokens.js";
 
@@ -35,7 +36,6 @@ export const sendTwitchChatMessage = async (channelID: string, message: string, 
             },
             body: JSON.stringify(body),
         });
-
         const data = await response.json();
 
         if(response.status < 200 || response.status > 299) {
@@ -55,14 +55,14 @@ export const sendTwitchChatMessage = async (channelID: string, message: string, 
             data: data.data[0],
         }
 
-    } catch (error) {
-        console.error(`Error sending Twitch chat message: ${error}`);
+    } catch (err) {
+        console.error(`Error sending Twitch chat message: ${err}`);
         return {
             error: true,
             message: 'Error sending Twitch chat message',
             status: 500,
             type: 'error',
-            reason: (error as Error).message,
+            reason: err instanceof Error ? err.message : String(err),
         }
     }
 }

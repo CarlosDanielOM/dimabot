@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface GetChatSettingsResponse {
@@ -52,13 +53,12 @@ export async function getChatSettings(
             status: 200,
             message: "success"
         };
-    } catch (error) {
-        console.error(`Error in getChatSettings:`, {
+    } catch (err) {
+        await logError({ function: 'getChatSettings',
             channelID,
             modId,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

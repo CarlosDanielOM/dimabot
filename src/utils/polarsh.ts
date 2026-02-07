@@ -1,5 +1,6 @@
 import { Polar } from '@polar-sh/sdk';
 import { getDragonflyClient } from './databases/dragonfly.database.js';
+import { error, info } from './logger.js';
 
 let polarshClient: Polar | null = null;
 
@@ -14,7 +15,7 @@ export async function getPolarShClient(caller: string): Promise<Polar> {
         accessToken: process.env.POLARSH_OAT
     });
 
-    console.log(`PolarSH client initialized for ${caller}`);
+    info({ message: `PolarSH client initialized for ${caller}` }, { destination: 'console' });
 
     return polarshClient;
 }
@@ -148,8 +149,8 @@ export async function ingestPolarSHEvent(options: IngestPolarSHEventOptions): Pr
         const storedEvents = await cacheClient.get(cacheKey);
         try {
             ingestData = storedEvents ? JSON.parse(storedEvents) : [];
-        } catch (e) {
-            console.error('Failed to parse stored AI events:', e);
+        } catch (err) {
+            await error({ function: 'ingestPolarSHEvent', error: 'Failed to parse stored AI events', err: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             ingestData = [];
         }
 
@@ -166,13 +167,13 @@ export async function ingestPolarSHEvent(options: IngestPolarSHEventOptions): Pr
             events: ingestData
         }).then(() => {
             cacheClient.del(cacheKey);
-        }).catch((error) => {
-            console.error('PolarSH ingest error:', error);
+        }).catch((err) => {
+            error({ function: 'ingestPolarSHEvent', error: 'PolarSH ingest error', err: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
         });
 
         return { error: false };
-    } catch (error) {
-        console.error('PolarSH ingest error:', error);
-        return { error: true, message: error instanceof Error ? error.message : String(error) };
+    } catch (err) {
+        await error({ function: 'ingestPolarSHEvent', error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
+        return { error: true, message: err instanceof Error ? err.message : String(err) };
     }
 }

@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface RemoveVipResponse {
@@ -52,15 +53,13 @@ export async function removeChannelVIP(channelID: string, userID: string): Promi
             message: 'Success',
             status: 200
         };
-    } catch (error) {
-        console.error(`Error in removeChannelVIP:`, {
+    } catch (err) {
+        await logError({ function: 'removeChannelVIP',
             channelID,
             userID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

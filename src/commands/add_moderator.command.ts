@@ -1,5 +1,6 @@
 import { addModerator } from '../functions/channels/index.js';
 import { getTwitchUserByLogin } from '../functions/users/index.js';
+import { error } from '../utils/logger.js';
 
 interface AddModeratorResponse {
     error: boolean;
@@ -35,14 +36,14 @@ export async function addModeratorCommand(channelID: string, user: string): Prom
             error: false,
             message: 'Moderator added'
         };
-    } catch (error) {
-        console.error(`Error in addModeratorCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'addModeratorCommand',
             channelID,
             user,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

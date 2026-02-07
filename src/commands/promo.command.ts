@@ -1,4 +1,5 @@
 import { getChannelInformation } from '../functions/channels/index.js';
+import { error } from "../utils/logger.js";
 import { getChannelClips, showClip } from '../functions/clips/index.js';
 import { getTwitchUserByLogin, getTwitchUserById } from '../functions/users/index.js';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
@@ -94,16 +95,15 @@ export async function promoCommand(channelID: string, streamerName: string, send
             clip: clip,
             message: !sendClip ? `Please, check out ${streamerChannelInfo.name} playing ${streamerChannelInfo.game} with the title "${streamerChannelInfo.title}" at https://twitch.tv/${streamerChannelInfo.login}` : ""
         };
-    } catch (error) {
-        console.error(`Error in promoCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'promoCommand',
             channelID,
             streamerName,
             sendClip,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error'

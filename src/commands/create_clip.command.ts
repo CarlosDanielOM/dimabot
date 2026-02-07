@@ -1,4 +1,5 @@
 import { createClip, getClip } from '../functions/clips/index.js';
+import { error } from '../utils/logger.js';
 
 interface CreateClipCommandResponse {
     error: boolean;
@@ -109,13 +110,13 @@ export async function createClipCommand(channelID: string): Promise<CreateClipCo
             status: 200,
             type: 'Clip created'
         };
-    } catch (error) {
-        console.error(`Error in createClipCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'createClipCommand',
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

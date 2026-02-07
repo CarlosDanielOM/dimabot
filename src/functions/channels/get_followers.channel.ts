@@ -1,5 +1,6 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface GetFollowersResponse {
     error: boolean;
@@ -55,14 +56,17 @@ export async function getTwitchFollowers(channelID: string, userId: string | nul
             data: data.data ?? [],
             total: data.total ?? 0
         };
-    } catch (error) {
-        console.error(`Error in getTwitchFollowers:`, {
+    } catch (err) {
+        await logError({
+            function: 'getTwitchFollowers',
             channelID,
             userId,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'get_channel_followers',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'channels/followers',
+            method: 'GET'
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 
@@ -104,15 +105,13 @@ export async function removeChannelModerator(channelID: string, userID: string):
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in removeChannelModerator:`, {
+    } catch (err) {
+        await logError({ function: 'removeChannelModerator',
             channelID,
             userID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

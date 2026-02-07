@@ -1,4 +1,5 @@
 import { getChannelInformation, setChannelInformation } from '../functions/channels/index.js';
+import { error } from '../utils/logger.js';
 
 interface TitleResponse {
     error: boolean;
@@ -56,17 +57,17 @@ export async function titleCommand(
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in titleCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'titleCommand',
             channelID,
             title,
             userLevel,
             commandLevel,
             premium,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

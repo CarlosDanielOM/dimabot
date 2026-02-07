@@ -1,4 +1,5 @@
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchAppHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
@@ -53,7 +54,6 @@ export async function getChannelClips(channelID: string, amount: number | null =
         const response = await fetch(getTwitchHelixUrl('clips', params.toString()), {
             headers: appHeader as unknown as Record<string, string>
         });
-
         const data = await response.json();
 
         if (data.error) {
@@ -66,22 +66,19 @@ export async function getChannelClips(channelID: string, amount: number | null =
         }
 
         await cacheClient.set(cacheKey, JSON.stringify(data.data), { EX: 60 * 60 * 3 });
-
         return {
             error: false,
             message: 'Success',
             data: data.data
         };
-    } catch (error) {
-        console.error(`Error in getChannelClips:`, {
+    } catch (err) {
+        await logError({ function: 'getChannelClips',
             channelID,
             amount,
             skip_cache,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error'

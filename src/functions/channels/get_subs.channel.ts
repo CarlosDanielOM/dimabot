@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface GetSubscriptionsResponse {
@@ -56,14 +57,12 @@ export async function getChannelSubscriptions(channelID: string): Promise<GetSub
             total: data.total,
             points: data.points
         };
-    } catch (error) {
-        console.error(`Error in getChannelSubscriptions:`, {
+    } catch (err) {
+        await logError({ function: 'getChannelSubscriptions',
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

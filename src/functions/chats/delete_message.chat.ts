@@ -1,4 +1,5 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface DeleteMessageResponse {
@@ -56,14 +57,13 @@ export async function deleteMessage(
             error: false,
             message: 'Message deleted'
         };
-    } catch (error) {
-        console.error(`Error in deleteMessage:`, {
+    } catch (err) {
+        await logError({ function: 'deleteMessage',
             messageID,
             channelID,
             modID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
         });
 
         return {

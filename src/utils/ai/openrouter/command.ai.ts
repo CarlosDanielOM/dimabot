@@ -9,6 +9,7 @@ import { constructSystemMessages } from '../prompts.ai.js';
 import { getDragonflyClient } from '../../databases/dragonfly.database.js';
 import { ingestPolarSHEvent } from '../../polarsh.js';
 import { MODELS, TOKEN_LIMITS } from '../constants.js';
+import { error } from '../../logger.js';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -184,9 +185,9 @@ export async function executeAiCommand(
         });
         
         const data: OpenRouterResponse = await response.json();
-        
+
         if (data.error) {
-            console.error('OpenRouter API error:', data.error);
+            await error({ function: 'executeAiCommand', error: 'OpenRouter API error', data: data.error }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: '[AI: Service temporarily unavailable]'
@@ -219,7 +220,7 @@ export async function executeAiCommand(
                     timestamp: new Date().toISOString()
                 }));
             } catch (cacheError) {
-                console.error('Cache error tracking AI usage:', cacheError);
+                await error({ function: 'executeAiCommand', error: 'Cache error tracking AI usage', err: cacheError instanceof Error ? cacheError.message : String(cacheError) }, { channelId: channelID, destination: 'both' });
             }
         }
 
@@ -246,9 +247,9 @@ export async function executeAiCommand(
             error: false,
             message: sanitizedOutput
         };
-        
+
     } catch (fetchError) {
-        console.error('OpenRouter fetch error:', fetchError);
+        await error({ function: 'executeAiCommand', error: 'OpenRouter fetch error', err: fetchError instanceof Error ? fetchError.message : String(fetchError) }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: '[AI: Connection error]'

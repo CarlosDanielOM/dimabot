@@ -3,6 +3,7 @@ import { sendTwitchChatMessage } from "../functions/chats/index.js";
 import { parseSpecialCommands } from "./special_parser.handler.js";
 import type { IBitUseEvent, ITwitchEventData } from "../interfaces/twitch/eventsub.interface.js";
 import type { IEventsub } from "../schemas/eventsub.schema.js";
+import { error as logError } from "../utils/logger.js";
 
 export const cheersHandler = async (channelID: string, eventData: ITwitchEventData, eventsubData: IEventsub, chatEnabled: boolean = true) => {
     try {
@@ -25,9 +26,11 @@ export const cheersHandler = async (channelID: string, eventData: ITwitchEventDa
         if(parsedMessage.parsedText == '' || parsedMessage.parsedText == null) return;
 
         sendTwitchChatMessage(channelID, parsedMessage.parsedText);
-        
-        
-    } catch (error) {
-        console.error('Error in cheersHandler', error);
+
+    } catch (err) {
+        await logError({
+            function: 'cheersHandler',
+            error: err instanceof Error ? err.message : String(err)
+        }, { channelId: channelID, destination: 'both' });
     }
 }

@@ -6,6 +6,7 @@ import { addModerator } from '../functions/channels/add_moderator.channel.js';
 import { sendTwitchChatMessage } from '../functions/chats/index.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error, info } from '../utils/logger.js';
 
 interface DuelResponse {
     error: boolean;
@@ -129,7 +130,7 @@ export async function duelCommand(channelID: string, user: string, userMod: bool
                             setTimeout(async () => {
                                 const add = await addModerator(channelID, moderatorId);
                                 if (add.error) {
-                                    console.error({ add });
+                                    await error({ function: 'duelCommand.addModerator', add }, { channelId: channelID, destination: 'both' });
                                 }
                             }, 70000);
                         }
@@ -170,7 +171,7 @@ export async function duelCommand(channelID: string, user: string, userMod: bool
                         if (moderatorId) {
                             const add = await removeChannelModerator(channelID, moderatorId);
                             if (add.error) {
-                                console.error({ add });
+                                await error({ function: 'duelCommand.removeModerator', add }, { channelId: channelID, destination: 'both' });
                             }
 
                             setTimeout(async () => {
@@ -214,15 +215,15 @@ export async function duelCommand(channelID: string, user: string, userMod: bool
                 message: `@${user} has challenged @${argument} to a duel! Type \"!duel accept\" to accept the challenge or \"!duel decline\" to decline the challenge.`
             };
         }
-    } catch (error) {
-        console.error(`Error in duelCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'duelCommand',
             channelID,
             user,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

@@ -1,5 +1,6 @@
 import { getTwitchBotHeader } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface SendAnnouncementResponse {
     error: boolean;
@@ -58,16 +59,19 @@ export async function sendAnnouncement(
             error: false,
             message: 'Announcement sent'
         };
-    } catch (error) {
-        console.error(`Error in sendAnnouncement:`, {
+    } catch (err) {
+        await logError({
+            function: 'sendAnnouncement',
             channelID,
             moderatorID,
             message,
             color,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'send_announcement',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'chat/announcements',
+            method: 'POST'
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

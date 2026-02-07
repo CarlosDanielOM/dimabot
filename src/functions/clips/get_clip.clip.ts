@@ -1,4 +1,5 @@
 import { getTwitchAppHeader } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface TwitchClip {
@@ -42,7 +43,6 @@ export async function getClip(clipID: string): Promise<GetClipResponse> {
         const response = await fetch(getTwitchHelixUrl('clips', params.toString()), {
             headers: appHeader as unknown as Record<string, string>
         });
-
         const data = await response.json();
 
         if (data.error) {
@@ -68,14 +68,12 @@ export async function getClip(clipID: string): Promise<GetClipResponse> {
             message: 'Success',
             data: data.data[0]
         };
-    } catch (error) {
-        console.error(`Error in getClip:`, {
+    } catch (err) {
+        await logError({ function: 'getClip',
             clipID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { destination: 'both' });
         return {
             error: true,
             message: 'Internal server error'

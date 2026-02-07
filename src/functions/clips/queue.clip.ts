@@ -1,4 +1,5 @@
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
+import { error as logError } from "../../utils/logger.js";
 import { pubSubManager, type ClipRequestData } from '../../classes/pubsub_manager.class.js';
 
 interface RequestClipResponse {
@@ -19,14 +20,12 @@ export async function checkClipConnection(channelID: string): Promise<CheckClipC
         return {
             connected: connected === 1
         };
-    } catch (error) {
-        console.error(`Error in checkClipConnection:`, {
+    } catch (err) {
+        await logError({ function: 'checkClipConnection',
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { channelId: channelID, destination: 'both' });
         return {
             connected: false
         };
@@ -78,7 +77,6 @@ export async function requestClip(channelID: string, streamerLogin: string, clip
             score: clipDataWithID.timestamp,
             value: clipID
         });
-
         if (autoProcess) {
             await pubSubManager.publishClipRequest(channelID, clipDataWithID);
         }
@@ -88,17 +86,15 @@ export async function requestClip(channelID: string, streamerLogin: string, clip
             message: 'Clip queued successfully',
             clipID
         };
-    } catch (error) {
-        console.error(`Error in requestClip:`, {
+    } catch (err) {
+        await logError({ function: 'requestClip',
             channelID,
             streamerLogin,
             clipData,
             autoProcess,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error'

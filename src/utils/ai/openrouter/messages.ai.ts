@@ -5,6 +5,7 @@ import { getDragonflyClient } from '../../databases/dragonfly.database.js';
 import { ingestPolarSHEvent } from '../../polarsh.js';
 import { constructChatSystemMessages } from '../prompts.ai.js';
 import { MODELS, TOKEN_LIMITS } from '../constants.js';
+import { error } from '../../logger.js';
 
 // ============================================================================
 // INTERFACES
@@ -286,7 +287,7 @@ export async function AiResponse(
                 await cacheClient.hIncrBy(`${channelID}:chatbot:usage`, 'completion_tokens', usageData.completion_tokens || 0);
                 await cacheClient.expire(`${channelID}:chatbot:usage`, generateTimeLeftToNextMonthInSeconds());
             } catch (cacheError) {
-                console.error('Cache error tracking AI usage:', cacheError);
+                await error({ function: 'AiMessage', error: 'Cache error tracking AI usage', err: cacheError instanceof Error ? cacheError.message : String(cacheError) }, { channelId: channelID, destination: 'both' });
             }
         }
 
@@ -310,7 +311,7 @@ export async function AiResponse(
         return messageData?.content || '';
 
     } catch (fetchError) {
-        console.error('OpenRouter fetch error:', fetchError);
+        await error({ function: 'AiMessage', error: 'OpenRouter fetch error', err: fetchError instanceof Error ? fetchError.message : String(fetchError) }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Connection error',

@@ -1,4 +1,5 @@
 import { getTwitchBotHeader } from '../../utils/header.js';
+import { error as logError } from "../../utils/logger.js";
 import { getTwitchHelixUrl } from '../../utils/links.js';
 
 interface TwitchClip {
@@ -45,7 +46,6 @@ export async function createClip(channelID: string): Promise<CreateClipResponse>
             method: 'POST',
             headers: botHeader as unknown as Record<string, string>
         });
-
         if (response.status === 404) {
             return {
                 error: true,
@@ -83,14 +83,12 @@ export async function createClip(channelID: string): Promise<CreateClipResponse>
             type: 'success',
             clipID: data.data[0].id
         };
-    } catch (error) {
-        console.error(`Error in createClip:`, {
+    } catch (err) {
+        await logError({ function: 'createClip',
             channelID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

@@ -5,6 +5,7 @@ import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import UsersSchema, { type IUsers } from '../schemas/users.schema.js';
 import type { ITwitchAccountCache } from '../interfaces/cache/twitch_account.cache.interface.js';
 import type { IUsersCache } from '../interfaces/cache/users.cache.interface.js';
+import { error, info } from "../utils/logger.js";
 
 type DragonflyClient = Awaited<ReturnType<typeof getDragonflyClient>>;
 
@@ -32,8 +33,8 @@ class TwitchStreamers {
             }
             await cache.set('twitch:accounts', JSON.stringify(accounts), { EX: 3600 });
             return accounts;
-        } catch (error) {
-            console.error(`Error getting Twitch accounts from cache: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getTwitchAccountsFromCache', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return [];
         }
     }
@@ -68,11 +69,11 @@ class TwitchStreamers {
 
                 cache.sAdd(`streamers:by:id`, twitchAccount!.id);
             }
-            
-            console.log('Accounts added to cache');
+
+            info({ message: 'Accounts added to cache' }, { destination: 'console' });
             return result;
-        } catch (error) {
-            console.error(`Error getting Twitch accounts from DB: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getTwitchAccountsFromDB', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return null;
         }
     }
@@ -85,8 +86,8 @@ class TwitchStreamers {
             if(!account) return null;
 
             return account;
-        } catch (error) {
-            console.error(`Error getting Twitch account by ID: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getTwitchAccountById', id, error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return null;
         }
     }
@@ -95,8 +96,8 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
             return await cache.sMembers(`streamers:by:id`);
-        } catch (error) {
-            console.error(`Error getting Twitch streamers: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getTwitchStreamers', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return [];
         }
     }
@@ -105,9 +106,9 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
             await this.getTwitchAccountsFromDB();
-            console.log('Accounts updated in cache');
-        } catch (error) {
-            console.error(`Error updating Twitch accounts in cache: ${error}`);
+            info({ message: 'Accounts updated in cache' }, { destination: 'console' });
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.updateTwitchAccountsInCache', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return null;
         }
     }
@@ -133,9 +134,9 @@ class TwitchStreamers {
             
             // Token not in cache or expired, refresh
             const refreshToken = await this.getAccountRefreshTokenById(id, account_type);
-            
+
             if (!refreshToken) {
-                console.error(`Refresh token not found for ${account_type}:${id}`);
+                await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh token not found for ${account_type}:${id}` }, { channelId: id, destination: 'both' });
                 return null;
             }
             
@@ -143,20 +144,20 @@ class TwitchStreamers {
             if (account_type === 'twitch') {
                 const { refreshTwitchToken } = await import('../utils/tokens.js');
                 const refreshResult = await refreshTwitchToken(refreshToken, id);
-                
+
                 if (!refreshResult.token) {
-                    console.error(`Failed to refresh Twitch token for ${id}`);
+                    await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Failed to refresh Twitch token for ${id}` }, { channelId: id, destination: 'both' });
                     return null;
                 }
-                
+
                 return refreshResult.token;
             }
-            
+
             // For other platforms (Kick, etc.), implement refresh logic later
-            console.error(`Refresh not implemented for ${account_type}`);
+            await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh not implemented for ${account_type}` }, { channelId: id, destination: 'both' });
             return null;
-        } catch (error) {
-            console.error(`Error getting account token by ID: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getAccountTokenById', id, account_type, error: err instanceof Error ? err.message : String(err) }, { channelId: id, destination: 'both' });
             return null;
         }
     }
@@ -167,8 +168,8 @@ class TwitchStreamers {
             let refresh_token = await cache.hGet(`accounts:${account_type}:${id}:data`, 'refresh_token');
             if(!refresh_token) return null;
             return refresh_token;
-        } catch (error) {
-            console.error(`Error getting account refresh token by ID: ${error}`);
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.getAccountRefreshTokenById', id, account_type, error: err instanceof Error ? err.message : String(err) }, { channelId: id, destination: 'both' });
             return null;
         }
     }

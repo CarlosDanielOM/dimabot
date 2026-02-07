@@ -1,4 +1,5 @@
 import { getUserColor } from '../chats/index.js';
+import { error as logError } from "../../utils/logger.js";
 import { searchGameById } from '../search/index.js';
 import { requestClip, checkClipConnection, generateRandomClipID } from './queue.clip.js';
 
@@ -35,8 +36,7 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
         if (!clipData || !streamerData || !streamerChannelData) {
             console.error(`Error in showClip: Missing parameters`, {
                 channelID
-            });
-
+            }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Missing parameters',
@@ -54,8 +54,7 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
                 channelID,
                 streamerID,
                 streamerColorResult
-            });
-
+            }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Failed to get streamer color',
@@ -72,8 +71,7 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
         if (!randomClip) {
             console.error(`Error in showClip: Clip not found`, {
                 channelID
-            });
-
+            }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Clip not found',
@@ -88,8 +86,7 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
         if (!duration || !clipUrl) {
             console.error(`Error in showClip: Missing clip duration or URL`, {
                 channelID
-            });
-
+            }, { channelId: channelID, destination: 'both' });
             return {
                 error: true,
                 message: 'Missing clip duration or URL',
@@ -105,8 +102,7 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
                 channelID,
                 gameID: randomClip.game_id,
                 searchResult: clipGameResult
-            });
-
+            }, { channelId: channelID, destination: 'both' });
             const gameData: any = {
                 id: randomClip.game_id,
                 name: 'Unknown Game',
@@ -184,18 +180,16 @@ export async function showClip(channelID: string, clipData: any[], streamerData:
             error: false,
             message: sendToQueue ? 'Clip queued and processing' : 'Clip queued'
         };
-    } catch (error) {
-        console.error(`Error in showClip:`, {
+    } catch (err) {
+        await logError({ function: 'showClip',
             channelID,
             clipData,
             streamerData,
             streamerChannelData,
             sendToQueue,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+        }, { channelId: channelID, destination: 'both' });
         return {
             error: true,
             message: 'Internal server error',

@@ -1,5 +1,6 @@
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface AddVipResponse {
     error: boolean;
@@ -52,14 +53,17 @@ export async function addChannelVIP(channelID: string, userID: string): Promise<
             message: 'Success',
             status: 200
         };
-    } catch (error) {
-        console.error(`Error in addChannelVIP:`, {
+    } catch (err) {
+        await logError({
+            function: 'addChannelVIP',
             channelID,
             userID,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'add_channel_vip',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'channels/vips',
+            method: 'POST'
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

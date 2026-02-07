@@ -3,6 +3,7 @@ import type { IEventsub } from '../schemas/eventsub.schema.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import * as ChannelFunctions from '../functions/channels/index.js';
 import * as ChatFunctions from '../functions/chats/index.js';
+import { warn as logWarn } from '../utils/logger.js';
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -774,7 +775,7 @@ export async function parseSpecialCommands(
     }
 
     if (iterations >= MAX_ITERATIONS) {
-        console.warn('Special commands parser reached maximum iterations');
+        logWarn({ message: 'Special commands parser reached maximum iterations' }, { destination: 'console' });
     }
 
     parsedText = unescapeInput(parsedText);

@@ -1,6 +1,7 @@
 import { createClient } from 'redis';
 import type { RedisClientType } from 'redis';
 import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { error, info } from '../utils/logger.js';
 
 type DragonflyClient = RedisClientType;
 
@@ -17,17 +18,17 @@ class PubSubManager {
             subscriber = client.duplicate();
 
             subscriber.on('message', this.handleMessage.bind(this));
-            subscriber.on('error', (error: any) => {
-                console.error('PubSub subscriber error:', error);
+            subscriber.on('error', (err: any) => {
+                error({ function: 'PubSubManager.subscriber', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             });
 
             await subscriber.connect();
             await publisher.connect();
 
-            console.log('PubSub manager initialized');
-        } catch (error) {
-            console.error('Error initializing PubSub manager:', error);
-            throw error;
+            info({ message: 'PubSub manager initialized' }, { destination: 'console' });
+        } catch (err) {
+            await error({ function: 'PubSubManager.init', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
+            throw err;
         }
     }
 
@@ -43,9 +44,9 @@ class PubSubManager {
             });
 
             await publisher.publish(channel, message);
-        } catch (error) {
-            console.error(`Error publishing to ${channel}:`, error);
-            throw error;
+        } catch (err) {
+            await error({ function: 'PubSubManager.publish', channel, error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
+            throw err;
         }
     }
 
@@ -66,9 +67,9 @@ class PubSubManager {
                     }
                 }
             });
-        } catch (error) {
-            console.error(`Error subscribing to ${channel}:`, error);
-            throw error;
+        } catch (err) {
+            await error({ function: 'PubSubManager.subscribe', channel, error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
+            throw err;
         }
     }
 
@@ -78,9 +79,9 @@ class PubSubManager {
                 await subscriber.unsubscribe(channel);
                 subscriptions.delete(channel);
             }
-        } catch (error) {
-            console.error(`Error unsubscribing from ${channel}:`, error);
-            throw error;
+        } catch (err) {
+            await error({ function: 'PubSubManager.unsubscribe', channel, error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
+            throw err;
         }
     }
 
@@ -92,8 +93,8 @@ class PubSubManager {
             if (handler) {
                 handler(data);
             }
-        } catch (error) {
-            console.error('Error handling pub/sub message:', error);
+        } catch (err) {
+            error({ function: 'PubSubManager.handleMessage', error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
         }
     }
 

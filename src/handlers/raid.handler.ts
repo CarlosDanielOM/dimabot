@@ -1,6 +1,7 @@
 import { handleShoutoutCommand } from '../commands/shoutout.command.js';
 import { parseSpecialCommands } from './special_parser.handler.js';
 import type { IEventsub } from '../schemas/eventsub.schema.js';
+import { info as logInfo, error as logError } from '../utils/logger.js';
 
 interface RaidEventData {
     to_broadcaster_user_id: string;
@@ -27,11 +28,12 @@ export async function raidHandler(
 ): Promise<RaidHandlerResponse> {
     try {
         if (eventsubData.minViewers > eventData.viewers) {
-            console.log(`Raid skipped - below minimum viewers`, {
+            await logInfo({
+                message: 'Raid skipped - below minimum viewers',
                 channelID: eventData.to_broadcaster_user_id,
                 raidViewers: eventData.viewers,
                 minViewers: eventsubData.minViewers
-            });
+            }, { channelId: eventData.to_broadcaster_user_id, destination: 'both' });
 
             return {
                 error: false,
@@ -65,11 +67,12 @@ export async function raidHandler(
         );
 
         if (shoutoutResult.error) {
-            console.error(`Error in raidHandler: Shoutout command failed`, {
+            await logError({
+                function: 'raidHandler.shoutout',
                 channelID: to_broadcaster_user_id,
                 raiderName: from_broadcaster_user_name,
                 shoutoutResult
-            });
+            }, { channelId: to_broadcaster_user_id, destination: 'both' });
 
             return {
                 error: true,
@@ -83,14 +86,14 @@ export async function raidHandler(
             error: false,
             message: 'Raid handled successfully'
         };
-    } catch (error) {
-        console.error(`Error in raidHandler:`, {
+    } catch (err) {
+        await logError({
+            function: 'raidHandler',
             eventData,
             eventsubData,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: eventData.to_broadcaster_user_id, destination: 'both' });
 
         return {
             error: true,

@@ -1,4 +1,5 @@
 import { speach } from '../functions/chats/index.js';
+import { error } from '../utils/logger.js';
 
 const linkRegex = new RegExp(/((http|https):\/\/)?(www\.)?[a-zA-Z-]+(\.[a-zA-Z-]{2})+(:\d+)?(\/\S*)?(\?\S+)?/gi);
 
@@ -75,14 +76,14 @@ export async function speechCommand(channelID: string, tags: Tags, argument?: st
             status: 200,
             type: 'success'
         };
-    } catch (error) {
-        console.error(`Error in speechCommand:`, {
+    } catch (err) {
+        await error({
+            function: 'speechCommand',
             channelID,
             argument,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,

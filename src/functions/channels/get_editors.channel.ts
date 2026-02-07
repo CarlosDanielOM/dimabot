@@ -2,10 +2,12 @@ import TwitchStreamers from '../../classes/twitch_streamers.class.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 import { getTwitchStreamerHeaderById } from '../../utils/header.js';
 import { getTwitchHelixUrl } from '../../utils/links.js';
+import { error as logError } from '../../utils/logger.js';
 
 interface Editor {
-    id: string;
-    name: string;
+    user_id: string;
+    user_login: string;
+    user_name: string;
 }
 
 interface GetEditorsResponse {
@@ -15,6 +17,8 @@ interface GetEditorsResponse {
 }
 
 export async function getChannelEditors(channelID: string, cache: boolean = false): Promise<GetEditorsResponse> {
+    let editorList: Editor[] = [];
+    
     try {
         const cacheClient = await getDragonflyClient('getChannelEditors');
         await TwitchStreamers.getTwitchAccountById(channelID);
@@ -49,19 +53,19 @@ export async function getChannelEditors(channelID: string, cache: boolean = fals
                 error: true,
                 message: data.message
             };
-        }
+         }
+        
+         editorList = data.data;
+         let reset = cache ? false : true;
 
-        const editors = data.data;
-        const editorList: Editor[] = [];
-        let reset = cache ? false : true;
+         for (let i = 0; i < editorList.length; i++) {
+             const editor = editorList[i];
 
-        for (let i = 0; i < editors.length; i++) {
-            const editor = editors[i];
-
-            const editorData: Editor = {
-                id: editor.user_id,
-                name: editor.user_name.toLowerCase(),
-            };
+             const editorData: Editor = {
+                 user_id: editor.user_id,
+                 user_login: editor.user_name.toLowerCase(),
+                 user_name: editor.user_name
+             };
 
             if (cache) {
                 if (!reset) {
@@ -79,14 +83,18 @@ export async function getChannelEditors(channelID: string, cache: boolean = fals
             error: false,
             editors: editorList
         };
-    } catch (error) {
-        console.error(`Error in getChannelEditors:`, {
+    } catch (err) {
+        await logError({
+            function: 'getChannelEditors',
             channelID,
             cache,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
+            operation: 'get_channel_editors',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            apiEndpoint: 'channels/editors',
+            method: 'GET',
+            editorsCount: editorList.length
+        }, { channelId: channelID, destination: 'both' });
 
         return {
             error: true,
