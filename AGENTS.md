@@ -2,15 +2,23 @@
 
 ## Project Structure
 
-### New TypeScript Project
+### TypeScript Project (Complete)
 - **Location:** `src/`
-- **Status:** Active rebuild from old JS project
+- **Status:** Fully migrated from JavaScript
 - **Language:** TypeScript
+- **Migration Status:** ✅ Bot side complete, now working on server side
 
-### Old JavaScript Project
-- **Location:** Root directory (excluding `src/`)
-- **Status:** Legacy code being replaced
+### Server-Side Migration
+- **Location:** `src/server/`
+- **Files:** WebSocket and HTTP route files only
+- **Public HTML:** Already migrated to `src/server/routes/public/`
+- **Functions/Utils/Classes:** All migrated to TypeScript
+
+### Legacy JavaScript Project
+- **Location:** `src-js/`
+- **Status:** Legacy code being replaced (read-only)
 - **Language:** JavaScript
+- **Note:** Do not modify unless explicitly requested
 
 ---
 
@@ -85,15 +93,16 @@ User: "YOU JUST DELETED MY DATA!"
 
 ### TypeScript (src/)
 - Safe to modify, test, and build
-- Target of the migration effort
+- **Bot side:** Fully migrated ✅
+- **Functions/Utils/Classes:** Fully migrated ✅
+- **Server side:** Currently in progress
 - Use proper TypeScript types
 - Follow existing patterns in `src/classes/`, `src/handlers/`, etc.
 
-### JavaScript (outside src/)
+### JavaScript (src-js/)
 - Read only
-- Do not modify legacy code unless explicitly requested
-- These files are being replaced by TypeScript versions
-- May be deleted during migration process
+- Legacy code being replaced by TypeScript versions in `src/server/`
+- May be deleted after server-side migration is complete
 
 ---
 

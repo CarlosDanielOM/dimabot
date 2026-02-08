@@ -55,13 +55,17 @@ function getTierLimits(planTier: string | null | undefined): TierInfo {
     const isPro = planTier === 'pro';
     const isPremium = planTier === 'premium';
     
+    const rulesLimit = isPro ? 'unlimited' : (isPremium ? 5 : 3);
+    const knownUsersLimit = isPro ? 'unlimited' : (isPremium ? 10 : 5);
+    const contextWindowValue = isPro ? 15 : (isPremium ? 7 : 3);
+    
     return {
         isPremiumPlus: isPro,
         isPremium: isPremium,
         limits: {
-            rules: isPro ? 'unlimited' : (isPremium ? 5 : 3),
-            knownUsers: isPro ? 'unlimited' : (isPremium ? 10 : 5),
-            contextWindow: isPro ? 15 : (isPremium ? 7 : 3)
+            rules: rulesLimit,
+            knownUsers: knownUsersLimit,
+            contextWindow: contextWindowValue
         }
     };
 }
@@ -97,6 +101,7 @@ export const aiPersonalityRoute = (app: express.Application): void => {
         const channelID = req.params.channelID;
 
         try {
+            // @ts-ignore
             const personality = await getPersonality(channelID);
             
             if (!personality) {
@@ -107,6 +112,7 @@ export const aiPersonalityRoute = (app: express.Application): void => {
                 });
             }
 
+            // @ts-ignore
             const user = await getChannelTierInfo(channelID);
             
             if (!user) {
