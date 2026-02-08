@@ -8,6 +8,7 @@ import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
 import { getDirname } from "../utils/pollyfills.js";
+import { getSiteAnalytics } from "../utils/siteanalytics.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -110,6 +111,30 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                 await cacheClient!.set(`twitch:${channelID}:clips:timeouts:default`, timeoutParam);
                 console.log(`Set clip timeout for channel ${channelID} to ${timeoutParam}s`);
             }
+        });
+
+        //? Site Global Data Analytics
+        io.of(/^\/site\/analytics\/[\w-]+$/).on('connection', async (socket) => {
+            const type = socket.nsp.name.split('/')[3];
+
+            if (type === 'live-channels') {
+                const liveChannels = await getSiteAnalytics('live');
+                socket.emit('live-channels', liveChannels);
+            }
+
+            if (type === 'active-channels') {
+                const activeChannels = await getSiteAnalytics('active');
+                socket.emit('active-channels', activeChannels);
+            }
+
+            if (type === 'registered-channels') {
+                const registeredChannels = await getSiteAnalytics('registered');
+                socket.emit('registered-channels', registeredChannels);
+            }
+
+            socket.on('disconnect', () => {
+                // No cleanup needed
+            });
         });
 
         // Setup stale connection cleanup job - only clean up truly stale connections
