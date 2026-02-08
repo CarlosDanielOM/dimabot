@@ -18,6 +18,7 @@ export const TwitchChatLogsQdrantCollection: IQdrantCollectionOptions = {
         {field_name: 'username', field_schema: 'keyword'},
         {field_name: 'message', field_schema: 'text', tokenizer: 'multilingual'},
         {field_name: 'channel', field_schema: 'keyword'},
+        {field_name: 'channel_name', field_schema: 'keyword'},
         {field_name: 'user_id', field_schema: 'keyword'},
         {field_name: 'timestamp', field_schema: 'integer'},
         {field_name: 'language', field_schema: 'keyword'},

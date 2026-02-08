@@ -43,6 +43,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         
         storeChatMessageEmbedding({
             channel_id: channelID,
+            channel_name: STREAMER?.name,
             message: messageEventData.message.text,
             username: messageEventData.chatter_user_name!,
             user_id: messageEventData.chatter_user_id || 'unknown',

@@ -5,6 +5,7 @@ import { createHash } from 'crypto';
 
 export interface IChatMessageData {
     channel_id: string;
+    channel_name?: string;
     message: string;
     username: string;
     user_id: string;
@@ -77,6 +78,7 @@ export async function storeChatMessageEmbedding(data: IChatMessageData): Promise
                     vector: embeddingResult.embedding,
                     payload: {
                         channel_id: data.channel_id,
+                        channel_name: data.channel_name,
                         username: data.username,
                         user_id: data.user_id,
                         message: data.message,
@@ -94,6 +96,7 @@ export async function storeChatMessageEmbedding(data: IChatMessageData): Promise
         debug({
             message: 'Chat message embedding stored successfully',
             channel_id: data.channel_id,
+            channel_name: data.channel_name,
             username: data.username,
             user_id: data.user_id,
             language: language,
