@@ -10,7 +10,6 @@ import JSONCOMMANDS from "../../config/commands/reservedcommands.json" with { ty
 import { incrementSiteAnalytics } from "../../utils/siteanalytics.js";
 import { ingestPolarSHEvent, getPolarShClient } from "../../utils/polarsh.js";
 import EventsubSchema from "../../schemas/eventsub.schema.js";
-import { authMiddleware } from "../../middleware/auth.middleware.js";
 import type { AuthRequest } from "../../middleware/types.js";
 
 const __dirname = getDirname(import.meta.url);
@@ -531,7 +530,7 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/auth/repair', authMiddleware as any, async (req: any, res: Response) => {
+    app.post('/auth/repair', async (req: any, res: Response) => {
         if (!req.user || !req.user.id) {
             return res.status(401).json({
                 error: true,
@@ -620,7 +619,7 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/auth/factory-reset', authMiddleware as any, async (req: any, res: Response) => {
+    app.post('/auth/factory-reset', async (req: any, res: Response) => {
         try {
             return res.status(501).json({
                 error: true,
