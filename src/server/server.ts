@@ -10,6 +10,7 @@ import { adminRoute } from "./routes/admin.route.js";
 import { referralRoute } from "./routes/referral.route.js";
 import { commandRoute } from "./routes/command.route.js";
 import { eventsubRoute } from "./routes/eventsub.route.js";
+import { authRoute } from "./routes/auth.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -42,6 +43,9 @@ export const server = async (): Promise<Express.Application> => {
 
         // Setup eventsub routes
         eventsubRoute(app);
+
+        // Setup auth routes
+        authRoute(app);
 
         //? Route imports
 
