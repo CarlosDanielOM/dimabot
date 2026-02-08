@@ -21,4 +21,13 @@ export const CODING_MODELS = {
     exhausted: 'z-ai/glm-4.5-air'
 } as const;
 
-export const DEFAULT_TIMEOUT_MS = 8000;
+ export const DEFAULT_TIMEOUT_MS = 8000;
+
+ export const EMBEDDING_MODELS = {
+    default: 'baai/bge-m3',
+    multilingual: 'baai/bge-m3'
+ } as const;
+
+ export const EMBEDDING_DIMENSIONS = {
+    'baai/bge-m3': 1024
+ } as const;
