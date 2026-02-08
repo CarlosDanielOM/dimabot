@@ -11,6 +11,7 @@ import { referralRoute } from "./routes/referral.route.js";
 import { commandRoute } from "./routes/command.route.js";
 import { eventsubRoute } from "./routes/eventsub.route.js";
 import { authRoute } from "./routes/auth.route.js";
+import { aiPersonalityRoute } from "./routes/aiPersonality.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -46,6 +47,9 @@ export const server = async (): Promise<Express.Application> => {
 
         // Setup auth routes
         authRoute(app);
+
+        // Setup aiPersonality routes
+        aiPersonalityRoute(app);
 
         //? Route imports
 
