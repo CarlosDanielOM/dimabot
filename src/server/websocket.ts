@@ -9,6 +9,7 @@ import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
 import { getDirname } from "../utils/pollyfills.js";
 import { getSiteAnalytics } from "../utils/siteanalytics.js";
+import { pubSubManager } from "../classes/pubsub_manager.class.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -157,6 +158,126 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
             });
         });
 
+        //? Speech Namespace with Pub/Sub Queue
+        io.of(/^\/speech\/\w+$/).on('connection', async (socket) => {
+            const channelID = socket.nsp.name.split('/')[2];
+
+            const account = await TwitchStreamers.getTwitchAccountById(channelID);
+            if (!account) {
+                socket.emit('error', {
+                    message: 'Account not found',
+                    status: 404
+                });
+                return;
+            }
+
+            // Clear any pending disconnect timeout for this channel
+            const existingTimeout = disconnectTimeouts.get(`speech:${channelID}`);
+            if (existingTimeout) {
+                clearTimeout(existingTimeout);
+                disconnectTimeouts.delete(`speech:${channelID}`);
+                console.log(`${channelID} reconnected to speech, cleared disconnect timeout`);
+            }
+
+            // Cleanup old processing flag
+            try {
+                await cacheClient!.del(`twitch:${channelID}:speech:processing`);
+            } catch (error) {
+                console.error(`Error deleting old processing flag for speech ${channelID}:`, error);
+            }
+
+            // Set connection flag
+            await cacheClient!.set(`twitch:${channelID}:speech:connected`, "true");
+            console.log(`${account.name} (${channelID}) connected to speech`);
+
+            // Subscribe to speech requests for this channel
+            await pubSubManager.subscribe(`twitch:${channelID}:speech:request`, async (data) => {
+                // data structure: { speechID, text, lang, timestamp }
+                try {
+                    // Verify ID in queue (defensive)
+                    const idExists = await cacheClient!.zRank(`twitch:${channelID}:speech:queue`, data.speechID);
+                    if (!idExists) {
+                        await cacheClient!.zAdd(`twitch:${channelID}:speech:queue`, {
+                            score: data.timestamp,
+                            value: data.speechID
+                        });
+                        await cacheClient!.set(
+                            `twitch:${channelID}:speech:queue:data:${data.speechID}`,
+                            JSON.stringify(data)
+                        );
+                    }
+
+                    // Check if currently processing
+                    const isProcessing = await cacheClient!.exists(`twitch:${channelID}:speech:processing`);
+
+                    // If not processing, start this one
+                    if (!isProcessing) {
+                        await cacheClient!.set(`twitch:${channelID}:speech:processing`, "true");
+                        io!.of(`/speech/${channelID}`).emit('speech', {
+                            id: data.speechID
+                        });
+                    }
+                } catch (error) {
+                    console.error(`Error processing speech request for ${channelID}:`, error);
+                }
+            });
+
+            // Handle speech-ended event from overlay
+            socket.on('speech-ended', async (data: { speechID?: string }) => {
+                await handleSpeechEnded(channelID, data.speechID);
+            });
+
+            // Handle disconnect with 5s delay
+            socket.on('disconnect', () => {
+                console.log(`${account.name} (${channelID}) disconnected from speech`);
+
+                const timeout = setTimeout(async () => {
+                    const namespace = io?.of(`/speech/${channelID}`);
+                    if (namespace) {
+                        const sockets = await namespace.fetchSockets();
+                        if (sockets.length === 0) {
+                            await cacheClient!.del(`twitch:${channelID}:speech:connected`);
+                            console.log(`${channelID} speech connection removed (5s timeout)`);
+                        } else {
+                            console.log(`${channelID} has ${sockets.length} active speech socket(s), keeping connection flag`);
+                        }
+                    }
+                    disconnectTimeouts.delete(`speech:${channelID}`);
+                }, 5000);
+
+                disconnectTimeouts.set(`speech:${channelID}`, timeout);
+            });
+        });
+
+        // Helper function to handle speech ended
+        async function handleSpeechEnded(channelID: string, currentSpeechID?: string) {
+            try {
+                // Cleanup
+                await cacheClient!.del(`twitch:${channelID}:speech:processing`);
+                if (currentSpeechID) {
+                    await cacheClient!.del(`twitch:${channelID}:speech:queue:data:${currentSpeechID}`);
+                }
+
+                // Get next from queue
+                const nextID = await cacheClient!.zPopMin(`twitch:${channelID}:speech:queue`);
+
+                // Process next if exists
+                if (nextID) {
+                    const nextData = await cacheClient!.get(`twitch:${channelID}:speech:queue:data:${nextID.value}`);
+                    if (nextData) {
+                        const parsedData = JSON.parse(nextData);
+
+                        await cacheClient!.set(`twitch:${channelID}:speech:processing`, "true");
+                        io!.of(`/speech/${channelID}`).emit('speech', {
+                            id: parsedData.speechID
+                        });
+                    }
+                }
+            } catch (error) {
+                console.error(`Error handling speech ended for ${channelID}:`, error);
+            }
+        }
+
         // Setup stale connection cleanup job - only clean up truly stale connections
         setInterval(async () => {
             if (!io || !cacheClient) return;
@@ -166,23 +287,47 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                 if (!allChannels || allChannels.length === 0) return;
 
                 for (const channel of allChannels) {
-                    const namespace = io.of(`/clip/${channel.id}`);
-                    const sockets = await namespace.fetchSockets();
-                    
-                    // If there are active sockets, skip cleanup
-                    if (sockets.length > 0) {
-                        continue;
+                    // Check clip connections
+                    const clipNamespace = io.of(`/clip/${channel.id}`);
+                    const clipSockets = await clipNamespace.fetchSockets();
+
+                    if (clipSockets.length === 0) {
+                        // Check heartbeat timestamp - only delete if no heartbeat for 60+ seconds
+                        const lastActivity = await cacheClient.get(`twitch:${channel.id}:clips:last_activity`);
+                        const now = Date.now();
+                        const timeSinceActivity = lastActivity ? now - parseInt(lastActivity) : Infinity;
+
+                        if (timeSinceActivity > 60000) {
+                            await cacheClient.del(`twitch:${channel.id}:clips:connected`);
+                            await cacheClient.del(`twitch:${channel.id}:clips:processing`);
+                            // console.log(`${channel.id} (${channel.name}) clip marked as inactive (no heartbeat for ${Math.round(timeSinceActivity / 1000)}s)`);
+                        }
                     }
 
-                    // Check heartbeat timestamp - only delete if no heartbeat for 60+ seconds
-                    const lastActivity = await cacheClient.get(`twitch:${channel.id}:clips:last_activity`);
-                    const now = Date.now();
-                    const timeSinceActivity = lastActivity ? now - parseInt(lastActivity) : Infinity;
+                    // Check speech connections (no heartbeat, just check connected flag)
+                    const speechNamespace = io.of(`/speech/${channel.id}`);
+                    const speechSockets = await speechNamespace.fetchSockets();
 
-                    if (timeSinceActivity > 60000) {
-                        await cacheClient.del(`twitch:${channel.id}:clips:connected`);
-                        await cacheClient.del(`twitch:${channel.id}:clips:processing`);
-                        // console.log(`${channel.id} (${channel.name}) marked as inactive (no heartbeat for ${Math.round(timeSinceActivity / 1000)}s)`);
+                    if (speechSockets.length === 0) {
+                        const speechConnected = await cacheClient.exists(`twitch:${channel.id}:speech:connected`);
+                        if (speechConnected) {
+                            // Speech doesn't have heartbeat, so just check if flag exists with no active sockets
+                            // Wait 60s before cleanup to allow for reconnection
+                            const speechKey = `twitch:${channel.id}:speech:last_cleanup`;
+                            const lastCleanup = await cacheClient.get(speechKey);
+
+                            if (!lastCleanup) {
+                                await cacheClient.set(speechKey, Date.now());
+                            } else {
+                                const timeSinceCleanup = Date.now() - parseInt(lastCleanup);
+                                if (timeSinceCleanup > 60000) {
+                                    await cacheClient.del(`twitch:${channel.id}:speech:connected`);
+                                    await cacheClient.del(`twitch:${channel.id}:speech:processing`);
+                                    await cacheClient.del(speechKey);
+                                    // console.log(`${channel.id} (${channel.name}) speech marked as inactive (no connections)`);
+                                }
+                            }
+                        }
                     }
                 }
             } catch (error) {
