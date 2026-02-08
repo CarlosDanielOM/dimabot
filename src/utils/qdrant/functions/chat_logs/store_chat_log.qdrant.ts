@@ -2,6 +2,7 @@ import { getQdrantConnection } from '../../../databases/qdrant.database.js';
 import { generateEmbedding, detectLanguage } from '../../../ai/openrouter/embeddings.ai.js';
 import { error, debug } from '../../../logger.js';
 import { createHash } from 'crypto';
+import EmbeddingBatcher from '../../../../classes/embedding_batcher.class.js';
 
 export interface IChatMessageData {
     channel_id: string;
@@ -30,6 +31,11 @@ function generatePointId(channelId: string, userId: string, timestamp: number): 
     return parseInt(hash.substring(0, 8), 16);
 }
 
+/**
+ * @deprecated This function is deprecated in favor of storeChatMessageEmbeddingBatched.
+ * The batched version reduces API calls and improves performance.
+ * Use storeChatMessageEmbeddingBatched() instead.
+ */
 export async function storeChatMessageEmbedding(data: IChatMessageData): Promise<IStoreChatLogResult> {
     const startTime = Date.now();
     const embeddingStart = Date.now();
@@ -132,5 +138,33 @@ export async function storeChatMessageEmbedding(data: IChatMessageData): Promise
             embeddingTime,
             totalTime
         };
+    }
+}
+
+export async function storeChatMessageEmbeddingBatched(data: IChatMessageData): Promise<void> {
+    try {
+        if (!data.message || data.message.trim().length === 0) {
+            return;
+        }
+
+        EmbeddingBatcher.addMessage({
+            text: data.message,
+            channel_id: data.channel_id,
+            channel_name: data.channel_name,
+            username: data.username,
+            user_id: data.user_id,
+            timestamp: data.timestamp,
+            language: data.language
+        });
+    } catch (err) {
+        error({
+            message: 'Error adding message to embedding batcher',
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            channel_id: data.channel_id,
+            username: data.username,
+            user_id: data.user_id,
+            chatMessage: data.message.substring(0, 100)
+        });
     }
 }

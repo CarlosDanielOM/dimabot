@@ -8,8 +8,7 @@ import { formatBadges } from "../utils/badges.js";
 import { error as logError } from "../utils/logger.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
-import { storeChatMessageEmbedding } from "../utils/qdrant/functions/chat_logs/store_chat_log.qdrant.js";
-import { embeddingMonitor } from "../utils/performance/metrics.js";
+import { storeChatMessageEmbeddingBatched } from "../utils/qdrant/functions/chat_logs/store_chat_log.qdrant.js";
 
 const commandsRegex = new RegExp(/^!([\p{L}\p{N}]+)(?:\W@?)?(.*)?$/u);
 const linkRegex = new RegExp(/((http|https):\/\/)?(www\.)?[a-zA-Z-]+(\.[a-zA-Z-]{2})+(:\d+)?(\/\S*)?(\?\S+)?/gi);
@@ -39,19 +38,13 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
 
         await ChatHistory.addMessage(channelID, messageEventData.chatter_user_name!, messageEventData.message.text, formattedBadges.badgeList);
 
-        const metricId = embeddingMonitor.start('store_chat_message', { channelID, username: messageEventData.chatter_user_name });
-        
-        storeChatMessageEmbedding({
+        storeChatMessageEmbeddingBatched({
             channel_id: channelID,
             channel_name: STREAMER?.name,
             message: messageEventData.message.text,
             username: messageEventData.chatter_user_name!,
             user_id: messageEventData.chatter_user_id || 'unknown',
             timestamp: Math.floor(Date.now() / 1000)
-        }).then(result => {
-            embeddingMonitor.end(metricId, !result.error, result.message);
-        }).catch(err => {
-            embeddingMonitor.end(metricId, false, err instanceof Error ? err.message : String(err));
         });
 
         let on_cooldown = false;
