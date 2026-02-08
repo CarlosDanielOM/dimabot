@@ -6,6 +6,7 @@ import { getDirname } from "../utils/pollyfills.js";
 import { fileRoute } from "./routes/file.route.js";
 import { clipRoute } from "./routes/clip.route.js";
 import { userRoute } from "./routes/user.route.js";
+import { adminRoute } from "./routes/admin.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -26,6 +27,9 @@ export const server = async (): Promise<Express.Application> => {
 
         // Setup user routes
         userRoute(app);
+
+        // Setup admin routes
+        adminRoute(app);
 
         //? Route imports
 
