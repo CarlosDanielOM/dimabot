@@ -1,6 +1,7 @@
 import { getQdrantConnection } from '../../../databases/qdrant.database.js';
 import { generateEmbedding, detectLanguage } from '../../../ai/openrouter/embeddings.ai.js';
 import { error, debug } from '../../../logger.js';
+import { createHash } from 'crypto';
 
 export interface IChatMessageData {
     channel_id: string;
@@ -20,6 +21,13 @@ export interface IStoreChatLogResult {
 }
 
 const COLLECTION_NAME = 'twitch_chat_logs';
+
+function generatePointId(channelId: string, userId: string, timestamp: number): number {
+    const hash = createHash('md5')
+        .update(`${channelId}:${userId}:${timestamp}`)
+        .digest('hex');
+    return parseInt(hash.substring(0, 8), 16);
+}
 
 export async function storeChatMessageEmbedding(data: IChatMessageData): Promise<IStoreChatLogResult> {
     const startTime = Date.now();
@@ -59,7 +67,7 @@ export async function storeChatMessageEmbedding(data: IChatMessageData): Promise
         const qdrantStart = Date.now();
         const qdrantClient = await getQdrantConnection('storeChatMessageEmbedding');
         
-        const pointId = `${data.channel_id}:${data.user_id}:${data.timestamp}`;
+        const pointId = generatePointId(data.channel_id, data.user_id, data.timestamp);
         
         await qdrantClient.upsert(COLLECTION_NAME, {
             wait: false,
