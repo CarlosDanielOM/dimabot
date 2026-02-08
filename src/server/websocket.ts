@@ -137,6 +137,26 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
             });
         });
 
+        //? Overlay Triggers
+        io.of(/^\/overlays\/triggers\/\w+$/).on('connection', async (socket) => {
+            const channelID = socket.nsp.name.split('/')[3];
+
+            const account = await TwitchStreamers.getTwitchAccountById(channelID);
+            if (!account) {
+                socket.emit('error', {
+                    message: 'Account not found',
+                    status: 404
+                });
+                return;
+            }
+
+            console.log(`${account.name} (${channelID}) connected to triggers`);
+
+            socket.on('disconnect', () => {
+                console.log(`${account.name} (${channelID}) disconnected from triggers`);
+            });
+        });
+
         // Setup stale connection cleanup job - only clean up truly stale connections
         setInterval(async () => {
             if (!io || !cacheClient) return;
