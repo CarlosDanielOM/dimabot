@@ -7,6 +7,7 @@ import { fileRoute } from "./routes/file.route.js";
 import { clipRoute } from "./routes/clip.route.js";
 import { userRoute } from "./routes/user.route.js";
 import { adminRoute } from "./routes/admin.route.js";
+import { referralRoute } from "./routes/referral.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -30,6 +31,9 @@ export const server = async (): Promise<Express.Application> => {
 
         // Setup admin routes
         adminRoute(app);
+
+        // Setup referral routes
+        referralRoute(app);
 
         //? Route imports
 
