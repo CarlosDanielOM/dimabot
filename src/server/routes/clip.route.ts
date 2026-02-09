@@ -3,12 +3,12 @@ import { promo } from "../../functions/promo/index.js";
 import path from "path";
 import { getDirname } from "../../utils/pollyfills.js";
 
-export const clipRoute = (app: express.Application): void => {
-    const __dirname = getDirname(import.meta.url);
-    const htmlPath = path.join(__dirname, 'public');
+const router = express.Router();
+const __dirname = getDirname(import.meta.url);
+const htmlPath = path.join(__dirname, 'public');
 
-    // GET /clip/:channelID - Serve clip.html
-    app.get('/clip/:channelID', async (req: Request, res: Response) => {
+// GET /clip/:channelID - Serve clip.html
+router.get('/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const designId = req.query.design as string;
@@ -36,7 +36,7 @@ export const clipRoute = (app: express.Application): void => {
     });
 
     // POST /clip/test - Test endpoint for promo
-    app.post('/clip/test', async (req: Request, res: Response) => {
+    router.post('/clip/test', async (req: Request, res: Response) => {
         try {
             const { channelID, streamer } = req.body;
 
@@ -68,4 +68,5 @@ export const clipRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const clipRoute = router;

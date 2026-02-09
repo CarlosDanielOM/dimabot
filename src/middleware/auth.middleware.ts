@@ -142,6 +142,7 @@ async function cacheToken(token: string, user: AuthenticatedUser): Promise<void>
 }
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    console.log('authMiddleware');
     try {
         const headers = req.headers as unknown as Record<string, string | string[] | undefined>;
         const authHeader = headers['authorization'] || headers['Authorization'];

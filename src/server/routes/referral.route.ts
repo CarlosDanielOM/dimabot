@@ -28,8 +28,9 @@ async function getUserFromToken(req: Request): Promise<IUsers | null> {
     return user;
 }
 
-export const referralRoute = (app: express.Application): void => {
-    app.get('/stats', authMiddleware as any, async (req: Request, res: Response) => {
+const router = express.Router();
+
+router.get('/stats', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const user = await getUserFromToken(req);
 
@@ -64,7 +65,7 @@ export const referralRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/codes', authMiddleware as any, async (req: Request, res: Response) => {
+router.get('/codes', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const user = await getUserFromToken(req);
 
@@ -106,7 +107,7 @@ export const referralRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/codes', authMiddleware as any, async (req: Request, res: Response) => {
+router.post('/codes', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const user = await getUserFromToken(req);
 
@@ -170,7 +171,7 @@ export const referralRoute = (app: express.Application): void => {
         }
     });
 
-    app.delete('/codes/:codeId', authMiddleware as any, async (req: Request, res: Response) => {
+router.delete('/codes/:codeId', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const user = await getUserFromToken(req);
 
@@ -216,7 +217,7 @@ export const referralRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/apply', authMiddleware as any, async (req: Request, res: Response) => {
+router.post('/apply', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const user = await getUserFromToken(req);
 
@@ -277,7 +278,7 @@ export const referralRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/validate/:code', async (req: Request, res: Response) => {
+router.get('/validate/:code', async (req: Request, res: Response) => {
         try {
             const { code } = req.params;
             const codeStr = Array.isArray(code) ? code[0] : code;
@@ -314,4 +315,5 @@ export const referralRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const referralRoute = router;

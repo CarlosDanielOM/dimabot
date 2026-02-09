@@ -25,31 +25,31 @@ export const server = async (): Promise<Express.Application> => {
         app.use(cors());
 
         // Setup file routes
-        fileRoute(app);
+        app.use('/video', fileRoute);
 
         // Setup clip routes
-        clipRoute(app);
-
-        // Setup user routes
-        userRoute(app);
-
-        // Setup admin routes
-        adminRoute(app);
-
-        // Setup referral routes
-        referralRoute(app);
-
-        // Setup command routes
-        commandRoute(app);
-
-        // Setup eventsub routes
-        eventsubRoute(app);
+        app.use('/clip', clipRoute);
 
         // Setup auth routes
-        authRoute(app);
+        app.use('/auth', authRoute);
+
+        // Setup user routes
+        app.use('/users', userRoute);
+
+        // Setup admin routes
+        app.use('/admins', adminRoute);
+
+        // Setup referral routes
+        app.use('/referrals', referralRoute);
+
+        // Setup command routes
+        app.use('/commands', commandRoute);
+
+        // Setup eventsub routes
+        app.use('/eventsubs', eventsubRoute);
 
         // Setup aiPersonality routes
-        aiPersonalityRoute(app);
+        app.use('/ai-personality', aiPersonalityRoute);
 
         //? Route imports
 

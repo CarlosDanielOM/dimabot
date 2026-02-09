@@ -4,9 +4,10 @@ import { getTwitchStreamerHeaderById } from "../../utils/header.js";
 import { getTwitchHelixUrl } from "../../utils/links.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 
-export const twitchRoute = (app: express.Application): void => {
+const router = express.Router();
+
     // GET /twitch/rewards - Get channel point rewards from Twitch API
-    app.get('/twitch/rewards', authMiddleware as any, async (req: Request, res: Response) => {
+router.get('/twitch/rewards', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const channelID = req.query.channelID as string;
             const rewardID = req.query.rewardID as string | undefined;
@@ -72,4 +73,6 @@ export const twitchRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+
+export const twitchRoute = router;

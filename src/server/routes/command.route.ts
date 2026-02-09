@@ -3,8 +3,9 @@ import { getDragonflyClient } from "../../utils/databases/dragonfly.database.js"
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { CommandsSchema, type ICommands } from "../../schemas/commands.schema.js";
 
-export const commandRoute = (app: express.Application): void => {
-    app.get('/', async (req: Request, res: Response) => {
+const router = express.Router();
+
+router.get('/', async (req: Request, res: Response) => {
         try {
             const query = req.query;
             const limit = parseInt((query.limit as string) || '100');
@@ -35,7 +36,7 @@ export const commandRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/:channelID', async (req: Request, res: Response) => {
+router.get('/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -72,7 +73,7 @@ export const commandRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -146,7 +147,7 @@ export const commandRoute = (app: express.Application): void => {
         }
     });
 
-    app.put('/:channelID/:commandID', authMiddleware as any, async (req: Request, res: Response) => {
+router.put('/:channelID/:commandID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, commandID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -216,7 +217,7 @@ export const commandRoute = (app: express.Application): void => {
         }
     });
 
-    app.delete('/:channelID/:commandID', authMiddleware as any, async (req: Request, res: Response) => {
+router.delete('/:channelID/:commandID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, commandID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -282,4 +283,5 @@ export const commandRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const commandRoute = router;

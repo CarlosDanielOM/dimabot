@@ -1,9 +1,10 @@
 import express, { type Request, type Response } from "express";
 import { getIO } from "../websocket.js";
 
-export const overlayRoute = (app: express.Application): void => {
+const router = express.Router();
+
     // GET /overlays/triggers/:channelID - Serve trigger.html
-    app.get('/overlays/triggers/:channelID', async (req: Request, res: Response) => {
+router.get('/overlays/triggers/:channelID', async (req: Request, res: Response) => {
         try {
             res.sendFile(process.cwd() + '/src/server/routes/public/trigger.html');
         } catch (error) {
@@ -22,7 +23,7 @@ export const overlayRoute = (app: express.Application): void => {
     });
 
     // GET /overlays/furry/:channelID - Serve furry.html
-    app.get('/overlays/furry/:channelID', async (req: Request, res: Response) => {
+router.get('/overlays/furry/:channelID', async (req: Request, res: Response) => {
         try {
             res.sendFile(process.cwd() + '/src/server/routes/public/furry.html');
         } catch (error) {
@@ -41,7 +42,7 @@ export const overlayRoute = (app: express.Application): void => {
     });
 
     // POST /overlays/furry/:channelID - Emit furry event via websocket
-    app.post('/overlays/furry/:channelID', async (req: Request, res: Response) => {
+router.post('/overlays/furry/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const { username, value } = req.body;
@@ -82,4 +83,5 @@ export const overlayRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const overlayRoute = router;

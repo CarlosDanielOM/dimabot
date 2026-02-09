@@ -5,10 +5,10 @@ import { getDirname } from "../../utils/pollyfills.js";
 
 const __dirname = getDirname(import.meta.url);
 
-export const fileRoute = (app: express.Application): void => {
-    const publicDir = path.join(__dirname, 'public');
+const router = express.Router();
+const publicDir = path.join(__dirname, 'public');
 
-    app.get('/video/clip/:channelID', async (req: Request, res: Response) => {
+router.get('/clip/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
 
@@ -77,4 +77,5 @@ export const fileRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const fileRoute = router;

@@ -4,10 +4,9 @@ import EventsubSchema from "../../schemas/eventsub.schema.js";
 import { subscribeTwitchEvent, unsubscribeTwitchEvent } from "../../utils/eventsub.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 
-export const eventsubRoute = (app: express.Application): void => {
-    app.use(authMiddleware as any);
+const router = express.Router();
 
-    app.get('/:channelID', async (req: Request, res: Response) => {
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -62,7 +61,7 @@ export const eventsubRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/:channelID', async (req: Request, res: Response) => {
+    router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -111,7 +110,7 @@ export const eventsubRoute = (app: express.Application): void => {
         }
     });
 
-    app.delete('/:channelID/:id', async (req: Request, res: Response) => {
+router.delete('/:channelID/:id', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, id } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -159,7 +158,7 @@ export const eventsubRoute = (app: express.Application): void => {
         }
     });
 
-    app.patch('/:channelID/:id', async (req: Request, res: Response) => {
+router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, id } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -223,4 +222,5 @@ export const eventsubRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const eventsubRoute = router;

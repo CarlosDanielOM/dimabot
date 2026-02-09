@@ -45,7 +45,6 @@ async function createReservedCommands(channelID: string, channelName: string): P
         });
 
         if (exists) {
-            console.log(`Command ${command} already exists in ${channelID}`);
             continue;
         }
 
@@ -112,7 +111,7 @@ async function getUserByUsername(username: string): Promise<IUsers | null> {
     });
 }
 
-async function exchangeOAuthCode(code: string): Promise<{ access_token: string; refresh_token: string; id_token: string; error?: string }> {
+async function exchangeOAuthCode(code: string): Promise<{ access_token: string; refresh_token: string; error?: string }> {
     const params = new URLSearchParams({
         client_id: process.env.CLIENT_ID!,
         client_secret: process.env.CLIENT_SECRET!,
@@ -131,54 +130,58 @@ async function exchangeOAuthCode(code: string): Promise<{ access_token: string; 
     const data = await response.json();
 
     if (data.error) {
-        return { access_token: '', refresh_token: '', id_token: '', error: data.error };
+        return { access_token: '', refresh_token: '', error: data.error };
     }
 
     return {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
-        id_token: data.id_token
     };
 }
 
-async function updateUserDataTokens(userId: string, accessToken: string, refreshToken: string, idToken: string, activate: boolean = false): Promise<IUsers | null> {
+async function updateUserDataTokens(userId: string, accessToken: string, refreshToken: string, activate: boolean = false): Promise<IUsers | StandardResponse | null> {
+    if (!accessToken || !refreshToken) {
+        return {
+            error: true,
+            message: '[⚠️] Missing access token or refresh token, please try again [/⚠️]',
+            status: 400,
+            type: 'error'
+        };
+    }
+    
     const encryptedToken = encrypt(accessToken);
     const encryptedRefreshToken = encrypt(refreshToken);
 
     const updateData: any = {
         'accounts.$.access_token': encryptedToken,
         'accounts.$.refresh_token': encryptedRefreshToken,
-        'accounts.$.id': idToken
     };
 
     if (activate) {
         updateData['accounts.$.actived'] = true;
         updateData['accounts.$.chat_enabled'] = true;
         updateData['accounts.$.up_to_date_permissions'] = true;
+        updateData['accounts.$.has_permissions'] = true;
     }
 
     return await UsersSchema.findOneAndUpdate(
-        { _id: userId },
+        { _id: userId, 'accounts.type': 'twitch' },
         { $set: updateData },
         { new: true }
     );
 }
 
-export const authRoute = (app: express.Application): void => {
+const router = express.Router();
 
-    app.get('/auth/register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
+router.get('/register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
         const token = req.query.code;
         const username = req.query.state;
 
-        console.log('[AUTH/REGISTER] Request received', { username, timestamp: new Date().toISOString() });
-
         if (!token || !username) {
-            console.log('[AUTH/REGISTER] Missing token or username', { username });
             return res.status(400).send('Missing token or username');
         }
 
         try {
-            console.log('[AUTH/REGISTER] OAuth code exchange started', { username });
             const oauthResult = await exchangeOAuthCode(token);
 
             if (oauthResult.error) {
@@ -190,65 +193,36 @@ export const authRoute = (app: express.Application): void => {
                 return res.status(400).send(oauthResult.error);
             }
 
-            console.log('[AUTH/REGISTER] OAuth code exchange completed', {
-                success: true,
-                username,
-                timestamp: new Date().toISOString()
-            });
+            const { access_token, refresh_token } = oauthResult;
 
-            const { access_token, refresh_token, id_token } = oauthResult;
-
-            console.log('[AUTH/REGISTER] User lookup by username', { username });
             const user = await getUserByUsername(username);
 
             if (!user) {
-                console.log('[AUTH/REGISTER] User not found', { username });
                 return res.status(404).send('User not found');
             }
 
-            console.log('[AUTH/REGISTER] User found', { userId: user._id.toString(), username });
-
-            console.log('[AUTH/REGISTER] Twitch account index lookup', { username });
             const twitchAccountIndex = user.accounts.findIndex(acc => acc.type === 'twitch');
             if (twitchAccountIndex === -1) {
-                console.log('[AUTH/REGISTER] Twitch account not found', { username });
                 return res.status(404).send('Twitch account not found');
             }
 
-            console.log('[AUTH/REGISTER] Twitch account index found', { index: twitchAccountIndex, username });
             const twitchAccount = user.accounts[twitchAccountIndex];
             const channelID = twitchAccount.id;
 
-            console.log('[AUTH/REGISTER] User tokens update started', {
-                userId: user._id.toString(),
-                channelID,
-                username
-            });
             const updatedUser = await updateUserDataTokens(
                 user._id.toString(),
                 access_token,
                 refresh_token,
-                id_token,
                 true
             );
 
             if (!updatedUser) {
-                console.log('[AUTH/REGISTER] User tokens update failed', { username });
                 return res.status(500).send('Internal server error');
             }
 
-            console.log('[AUTH/REGISTER] User tokens update completed', {
-                userId: user._id.toString(),
-                username
-            });
-
-            if (!twitchAccount.actived && updatedUser.polar_sh_customer_id) {
-                console.log('[AUTH/REGISTER] PolarSH event ingest started', {
-                    customerId: updatedUser.polar_sh_customer_id,
-                    channelID
-                });
+            if (!twitchAccount.actived && (updatedUser as IUsers).polar_sh_customer_id) {
                 const ingestResult = await ingestPolarSHEvent({
-                    customerId: updatedUser.polar_sh_customer_id,
+                    customerId: (updatedUser as IUsers).polar_sh_customer_id,
                     cost: -25,
                     reason: 'Free benefits',
                     mode: 'immediate'
@@ -260,28 +234,14 @@ export const authRoute = (app: express.Application): void => {
                         channelID,
                         timestamp: new Date().toISOString()
                     });
-                } else {
-                    console.log('[AUTH/REGISTER] PolarSH ingest completed', {
-                        success: true,
-                        channelID
-                    });
                 }
             }
 
-            console.log('[AUTH/REGISTER] Cache update started', { channelID });
             await TwitchStreamers.updateTwitchAccountsInCache();
-            console.log('[AUTH/REGISTER] Cache update completed', { channelID });
 
-            console.log('[AUTH/REGISTER] Streamer lookup by channelID', { channelID });
             const streamer = await TwitchStreamers.getTwitchAccountById(channelID);
 
             if (streamer) {
-                console.log('[AUTH/REGISTER] Streamer found', {
-                    channelID,
-                    streamerName: streamer.name
-                });
-
-                console.log('[AUTH/REGISTER] Add moderator started', { channelID });
                 const addedModerator = await addModerator(channelID, '698614112');
 
                 if (addedModerator.error && addedModerator.message !== 'user is already a mod') {
@@ -293,30 +253,13 @@ export const authRoute = (app: express.Application): void => {
                     return res.status(addedModerator.status).json(addedModerator);
                 }
 
-                console.log('[AUTH/REGISTER] Add moderator completed', {
-                    success: true,
-                    channelID
-                });
-
-                console.log('[AUTH/REGISTER] EventSub subscriptions started', { channelID });
                 await subscribeAllEventSubs(channelID);
-                console.log('[AUTH/REGISTER] EventSub subscriptions completed', { channelID });
 
-                console.log('[AUTH/REGISTER] Reserved commands creation started', {
-                    channelID,
-                    streamerName: streamer.name
-                });
                 await createReservedCommands(channelID, streamer.name);
-                console.log('[AUTH/REGISTER] Reserved commands creation completed', { channelID });
-            } else {
-                console.log('[AUTH/REGISTER] Streamer not found', { channelID });
             }
 
-            console.log('[AUTH/REGISTER] Analytics increment started');
             await incrementSiteAnalytics('active', 1);
-            console.log('[AUTH/REGISTER] Analytics increment completed');
 
-            console.log('[AUTH/REGISTER] Redirecting to login', { username });
             return res.redirect(`https://domdimabot.com/login`);
 
         } catch (error) {
@@ -331,19 +274,15 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/auth/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
+router.get('/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
         const token = req.query.code;
         const username = req.query.state;
 
-        console.log('[AUTH/REAUTHENTICATE] Request received', { username, timestamp: new Date().toISOString() });
-
         if (!token || !username) {
-            console.log('[AUTH/REAUTHENTICATE] Missing token or username', { username });
             return res.status(400).send('Missing token or username');
         }
 
         try {
-            console.log('[AUTH/REAUTHENTICATE] OAuth code exchange started', { username });
             const oauthResult = await exchangeOAuthCode(token);
 
             if (oauthResult.error) {
@@ -355,84 +294,33 @@ export const authRoute = (app: express.Application): void => {
                 return res.status(400).send(oauthResult.error);
             }
 
-            console.log('[AUTH/REAUTHENTICATE] OAuth code exchange completed', {
-                success: true,
-                username,
-                timestamp: new Date().toISOString()
-            });
+            const { access_token, refresh_token } = oauthResult;
 
-            const { access_token, refresh_token, id_token } = oauthResult;
-
-            console.log('[AUTH/REAUTHENTICATE] User lookup by username', { username });
             const user = await getUserByUsername(username);
 
             if (!user) {
-                console.log('[AUTH/REAUTHENTICATE] User not found', { username });
                 return res.status(404).send('User not found');
             }
 
-            console.log('[AUTH/REAUTHENTICATE] User found', { userId: user._id.toString(), username });
-
-            console.log('[AUTH/REAUTHENTICATE] User tokens update started', {
-                userId: user._id.toString(),
-                username
-            });
             const updatedUser = await updateUserDataTokens(
                 user._id.toString(),
                 access_token,
                 refresh_token,
-                id_token,
                 true
             );
 
             if (!updatedUser) {
-                console.log('[AUTH/REAUTHENTICATE] User tokens update failed', { username });
                 return res.status(500).send('Internal server error');
             }
 
-            console.log('[AUTH/REAUTHENTICATE] User tokens update completed', {
-                userId: user._id.toString(),
-                username
-            });
-
-            console.log('[AUTH/REAUTHENTICATE] Cache update started');
             await TwitchStreamers.updateTwitchAccountsInCache();
-            console.log('[AUTH/REAUTHENTICATE] Cache update completed');
 
-            console.log('[AUTH/REAUTHENTICATE] Twitch account lookup', {
-                userId: user._id.toString(),
-                username
-            });
-            const twitchAccount = updatedUser.accounts.find(acc => acc.type === 'twitch');
+            const twitchAccount = (updatedUser as IUsers).accounts.find(acc => acc.type === 'twitch');
 
             if (twitchAccount) {
-                console.log('[AUTH/REAUTHENTICATE] Twitch account found', {
-                    channelID: twitchAccount.id,
-                    username
-                });
-
-                console.log('[AUTH/REAUTHENTICATE] Streamer lookup by channelID', {
-                    channelID: twitchAccount.id
-                });
-                const streamer = await TwitchStreamers.getTwitchAccountById(twitchAccount.id);
-                if (streamer) {
-                    console.log('[AUTH/REAUTHENTICATE] Streamer found, cache updated', {
-                        channelID: twitchAccount.id,
-                        username
-                    });
-                } else {
-                    console.log('[AUTH/REAUTHENTICATE] Streamer not found', {
-                        channelID: twitchAccount.id
-                    });
-                }
-            } else {
-                console.log('[AUTH/REAUTHENTICATE] Twitch account not found', {
-                    userId: user._id.toString(),
-                    username
-                });
+                await TwitchStreamers.getTwitchAccountById(twitchAccount.id);
             }
 
-            console.log('[AUTH/REAUTHENTICATE] Redirecting to login', { username });
             return res.redirect(`https://domdimabot.com/login`);
 
         } catch (error) {
@@ -447,19 +335,11 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/auth/login', async (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response) => {
         const body = req.body as LoginRequestBody;
         const { name, id, email } = body;
 
-        console.log('[AUTH/LOGIN] Request received', {
-            id,
-            name,
-            email,
-            timestamp: new Date().toISOString()
-        });
-
         if (!id) {
-            console.log('[AUTH/LOGIN] Missing ID');
             return res.status(400).json({
                 error: true,
                 message: 'Missing id',
@@ -468,7 +348,6 @@ export const authRoute = (app: express.Application): void => {
         }
 
         if (id === '1104868478') {
-            console.log('[AUTH/LOGIN] Blocked ID attempted login', { id });
             return res.status(403).json({
                 error: true,
                 message: 'You are not allowed to login with this account',
@@ -478,26 +357,11 @@ export const authRoute = (app: express.Application): void => {
         }
 
         try {
-            console.log('[AUTH/LOGIN] User lookup by Twitch ID', { id });
             const existingUser = await getUserByTwitchID(id);
 
             if (existingUser) {
-                console.log('[AUTH/LOGIN] Existing user found', {
-                    userId: existingUser._id.toString(),
-                    username: existingUser.name,
-                    id
-                });
-
-                console.log('[AUTH/LOGIN] Twitch account lookup', {
-                    userId: existingUser._id.toString(),
-                    id
-                });
                 const twitchAccount = existingUser.accounts.find(acc => acc.type === 'twitch');
                 if (!twitchAccount) {
-                    console.log('[AUTH/LOGIN] Twitch account not found', {
-                        userId: existingUser._id.toString(),
-                        id
-                    });
                     return res.status(404).json({
                         error: true,
                         message: 'Twitch account not found',
@@ -505,10 +369,6 @@ export const authRoute = (app: express.Application): void => {
                     });
                 }
 
-                console.log('[AUTH/LOGIN] Existing user response sent', {
-                    userId: existingUser._id.toString(),
-                    username: existingUser.name
-                });
                 return res.status(200).json({
                     error: false,
                     message: 'User already exists',
@@ -525,10 +385,7 @@ export const authRoute = (app: express.Application): void => {
                 });
             }
 
-            console.log('[AUTH/LOGIN] Existing user not found, proceeding with new user creation', { id });
-
             if (!name || !email) {
-                console.log('[AUTH/LOGIN] Missing name or email', { id });
                 return res.status(400).json({
                     error: true,
                     message: 'Missing name or email',
@@ -536,7 +393,6 @@ export const authRoute = (app: express.Application): void => {
                 });
             }
 
-            console.log('[AUTH/LOGIN] New user creation started', { id, name });
             const encryptedAccessToken = encrypt('');
             const encryptedRefreshToken = encrypt('');
 
@@ -561,14 +417,8 @@ export const authRoute = (app: express.Application): void => {
             });
 
             try {
-                console.log('[AUTH/LOGIN] PolarSH client initialization');
                 const polarshClient = await getPolarShClient('auth login');
 
-                console.log('[AUTH/LOGIN] PolarSH customer creation started', {
-                    email: newUser.email,
-                    username: newUser.name,
-                    twitchID: id
-                });
                 const customer = await polarshClient.customers.create({
                     email: newUser.email,
                     externalId: newUser._id.toString(),
@@ -582,30 +432,12 @@ export const authRoute = (app: express.Application): void => {
                     }
                 });
 
-                console.log('[AUTH/LOGIN] PolarSH customer created', {
-                    customerId: customer.id,
-                    userId: newUser._id.toString()
-                });
                 newUser.polar_sh_customer_id = customer.id;
 
-                console.log('[AUTH/LOGIN] New user save started', {
-                    userId: newUser._id.toString(),
-                    username: newUser.name
-                });
                 await newUser.save();
-                console.log('[AUTH/LOGIN] New user save completed', {
-                    userId: newUser._id.toString(),
-                    username: newUser.name
-                });
 
-                console.log('[AUTH/LOGIN] Analytics increment started');
                 await incrementSiteAnalytics('registered', 1);
-                console.log('[AUTH/LOGIN] Analytics increment completed');
 
-                console.log('[AUTH/LOGIN] New user creation response sent', {
-                    userId: newUser._id.toString(),
-                    username: newUser.name
-                });
                 return res.status(201).json({
                     error: false,
                     message: 'User created',
@@ -648,42 +480,28 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/auth/mock-register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
+router.get('/mock-register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, res: Response) => {
         const username = req.query.state;
 
-        console.log('[AUTH/MOCK-REGISTER] Request received', { username, timestamp: new Date().toISOString() });
-
         if (!username) {
-            console.log('[AUTH/MOCK-REGISTER] Missing username');
             return res.status(400).json({ error: true, message: 'Missing username' });
         }
 
         try {
-            console.log('[AUTH/MOCK-REGISTER] User lookup by username', { username });
             const user = await getUserByUsername(username);
 
             if (!user) {
-                console.log('[AUTH/MOCK-REGISTER] User not found', { username });
                 return res.status(404).json({ error: true, message: 'User not found' });
             }
 
-            console.log('[AUTH/MOCK-REGISTER] User found', { userId: user._id.toString(), username });
-
-            console.log('[AUTH/MOCK-REGISTER] Twitch account lookup', { username });
             const twitchAccount = user.accounts.find(acc => acc.type === 'twitch');
             if (!twitchAccount) {
-                console.log('[AUTH/MOCK-REGISTER] Twitch account not found', { username });
                 return res.status(404).json({ error: true, message: 'Twitch account not found' });
             }
 
             const channelID = twitchAccount.id;
-            console.log('[AUTH/MOCK-REGISTER] ChannelID extracted', { channelID, username });
 
             if (!twitchAccount.actived && user.polar_sh_customer_id) {
-                console.log('[AUTH/MOCK-REGISTER] PolarSH event ingest started', {
-                    customerId: user.polar_sh_customer_id,
-                    channelID
-                });
                 const ingestResult = await ingestPolarSHEvent({
                     customerId: user.polar_sh_customer_id,
                     cost: -25,
@@ -697,28 +515,14 @@ export const authRoute = (app: express.Application): void => {
                         channelID,
                         timestamp: new Date().toISOString()
                     });
-                } else {
-                    console.log('[AUTH/MOCK-REGISTER] PolarSH ingest completed', {
-                        success: true,
-                        channelID
-                    });
                 }
             }
 
-            console.log('[AUTH/MOCK-REGISTER] Cache update started', { channelID });
             await TwitchStreamers.updateTwitchAccountsInCache();
-            console.log('[AUTH/MOCK-REGISTER] Cache update completed', { channelID });
 
-            console.log('[AUTH/MOCK-REGISTER] Streamer lookup by channelID', { channelID });
             const streamer = await TwitchStreamers.getTwitchAccountById(channelID);
 
             if (streamer) {
-                console.log('[AUTH/MOCK-REGISTER] Streamer found', {
-                    channelID,
-                    streamerName: streamer.name
-                });
-
-                console.log('[AUTH/MOCK-REGISTER] Add moderator started', { channelID });
                 const addedModerator = await addModerator(channelID, '698614112');
 
                 if (addedModerator.error && addedModerator.message !== 'user is already a mod') {
@@ -730,42 +534,18 @@ export const authRoute = (app: express.Application): void => {
                     return res.status(addedModerator.status).json(addedModerator);
                 }
 
-                console.log('[AUTH/MOCK-REGISTER] Add moderator completed', {
-                    success: true,
-                    channelID
-                });
-
-                console.log('[AUTH/MOCK-REGISTER] EventSub subscriptions started', { channelID });
                 await subscribeAllEventSubs(channelID);
-                console.log('[AUTH/MOCK-REGISTER] EventSub subscriptions completed', { channelID });
 
-                console.log('[AUTH/MOCK-REGISTER] Reserved commands creation started', {
-                    channelID,
-                    streamerName: streamer.name
-                });
                 await createReservedCommands(channelID, streamer.name);
-                console.log('[AUTH/MOCK-REGISTER] Reserved commands creation completed', { channelID });
 
-                console.log('[AUTH/MOCK-REGISTER] User activation update started', {
-                    userId: user._id.toString(),
-                    channelID
-                });
                 await UsersSchema.updateOne(
                     { _id: user._id },
                     { $set: { 'accounts.$.actived': true, 'accounts.$.chat_enabled': true } }
                 );
-                console.log('[AUTH/MOCK-REGISTER] User activation update completed', {
-                    userId: user._id.toString()
-                });
 
-                console.log('[AUTH/MOCK-REGISTER] Analytics increment started');
                 await incrementSiteAnalytics('active', 1);
-                console.log('[AUTH/MOCK-REGISTER] Analytics increment completed');
-            } else {
-                console.log('[AUTH/MOCK-REGISTER] Streamer not found', { channelID });
             }
 
-            console.log('[AUTH/MOCK-REGISTER] Redirecting to login', { username });
             return res.redirect(`https://domdimabot.com/login`);
 
         } catch (error) {
@@ -780,14 +560,8 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/auth/repair', async (req: any, res: Response) => {
-        console.log('[AUTH/REPAIR] Request received', {
-            userId: req.user?.id,
-            timestamp: new Date().toISOString()
-        });
-
+router.post('/repair', async (req: any, res: Response) => {
         if (!req.user || !req.user.id) {
-            console.log('[AUTH/REPAIR] Unauthorized - missing user or ID');
             return res.status(401).json({
                 error: true,
                 message: 'Unauthorized',
@@ -795,20 +569,10 @@ export const authRoute = (app: express.Application): void => {
             });
         }
 
-        console.log('[AUTH/REPAIR] Authorization check passed', {
-            userId: req.user.id
-        });
-
         try {
-            console.log('[AUTH/REPAIR] User lookup by Twitch ID', {
-                userId: req.user.id
-            });
             const user = await getUserByTwitchID(req.user.id);
 
             if (!user) {
-                console.log('[AUTH/REPAIR] User not found', {
-                    userId: req.user.id
-                });
                 return res.status(404).json({
                     error: true,
                     message: 'User not found',
@@ -816,19 +580,8 @@ export const authRoute = (app: express.Application): void => {
                 });
             }
 
-            console.log('[AUTH/REPAIR] User found', {
-                userId: user._id.toString(),
-                username: user.name
-            });
-
-            console.log('[AUTH/REPAIR] Twitch account lookup', {
-                userId: user._id.toString()
-            });
             const twitchAccount = user.accounts.find(acc => acc.type === 'twitch');
             if (!twitchAccount) {
-                console.log('[AUTH/REPAIR] Twitch account not found', {
-                    userId: user._id.toString()
-                });
                 return res.status(404).json({
                     error: true,
                     message: 'Twitch account not found',
@@ -837,37 +590,16 @@ export const authRoute = (app: express.Application): void => {
             }
 
             const channelID = twitchAccount.id;
-            console.log('[AUTH/REPAIR] ChannelID extracted', {
-                channelID,
-                userId: user._id.toString()
-            });
 
-            console.log('[AUTH/REPAIR] Existing EventSubs lookup started', { channelID });
             const existingEventSubs = await EventsubSchema.find({ channelID }).select('type').lean();
             const existingTypes = existingEventSubs.map(es => es.type);
-
-            console.log('[AUTH/REPAIR] Existing EventSubs found', {
-                channelID,
-                count: existingEventSubs.length,
-                types: existingTypes
-            });
 
             const missingSubscriptions = SUBSCRIPTION_TYPES.filter(
                 sub => !existingTypes.includes(sub.type)
             );
 
-            console.log('[AUTH/REPAIR] Missing subscriptions identified', {
-                channelID,
-                count: missingSubscriptions.length,
-                types: missingSubscriptions.map(s => s.type)
-            });
-
             let subscribedCount = 0;
 
-            console.log('[AUTH/REPAIR] Subscription loop started', {
-                channelID,
-                totalCount: missingSubscriptions.length
-            });
             for (const subscription of missingSubscriptions) {
                 const condition = { ...subscription.condition };
 
@@ -877,11 +609,6 @@ export const authRoute = (app: express.Application): void => {
                     condition.broadcaster_user_id = channelID;
                 }
 
-                console.log('[AUTH/REPAIR] Subscribing to event', {
-                    channelID,
-                    subscriptionType: subscription.type,
-                    subscriptionVersion: subscription.version
-                });
                 const response = await subscribeTwitchEvent(
                     channelID,
                     subscription.type,
@@ -892,10 +619,6 @@ export const authRoute = (app: express.Application): void => {
 
                 if (!response.error) {
                     subscribedCount++;
-                    console.log('[AUTH/REPAIR] Subscription successful', {
-                        channelID,
-                        subscriptionType: subscription.type
-                    });
                 } else {
                     console.error('[AUTH/REPAIR] Subscription failed', {
                         subscriptionType: subscription.type,
@@ -906,18 +629,6 @@ export const authRoute = (app: express.Application): void => {
                 }
             }
 
-            console.log('[AUTH/REPAIR] Subscription loop completed', {
-                channelID,
-                subscribedCount,
-                totalNeeded: missingSubscriptions.length
-            });
-
-            console.log('[AUTH/REPAIR] Response sent', {
-                userId: user._id.toString(),
-                channelID,
-                subscribedCount,
-                totalNeeded: missingSubscriptions.length
-            });
             return res.status(200).json({
                 error: false,
                 message: `Repaired ${subscribedCount} missing event subscriptions`,
@@ -943,14 +654,8 @@ export const authRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/auth/factory-reset', async (req: any, res: Response) => {
-        console.log('[AUTH/FACTORY-RESET] Request received', {
-            userId: req.user?.id,
-            timestamp: new Date().toISOString()
-        });
-
+router.post('/factory-reset', async (req: any, res: Response) => {
         try {
-            console.log('[AUTH/FACTORY-RESET] Not implemented response sent');
             return res.status(501).json({
                 error: true,
                 message: 'Factory reset not yet implemented',
@@ -970,4 +675,5 @@ export const authRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const authRoute = router;

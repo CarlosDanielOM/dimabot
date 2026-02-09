@@ -70,14 +70,14 @@ export const getTwitchStreamerHeaderById = async (streamerId: string): Promise<T
     if (!streamer.access_token) {
         return {
             error: true,
-            message: '[⚠️] Streamer does not have valid permissions to access this feature, please reauthorize bot again in https://domdimabot.com [/⚠️]'
+            message: '[⚠️] Streamer does not have valid permissions token to access this feature, please reauthorize streamer again in https://domdimabot.com [/⚠️]'
         };
     }
 
     if (streamer.has_permissions !== 'true') {
         return {
             error: true,
-            message: '[⚠️] Streamer does not have valid permissions to access this feature, please reauthorize bot again in https://domdimabot.com [/⚠️]'
+            message: '[⚠️] Streamer does not have valid permissions to access this feature, please reauthorize streamer again in https://domdimabot.com [/⚠️]'
         };
     }
 

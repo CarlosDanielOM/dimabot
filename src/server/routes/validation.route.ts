@@ -2,8 +2,9 @@ import express, { type Request, type Response } from "express";
 import { getDragonflyClient } from "../../utils/databases/dragonfly.database.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 
-export const validationRoute = (app: express.Application): void => {
-    app.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+const router = express.Router();
+
+router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         const cacheClient = await getDragonflyClient('ValidationRoute');
         const { channelID } = req.params;
         const token = req.headers.authorization || req.headers.Authorization;
@@ -97,4 +98,5 @@ export const validationRoute = (app: express.Application): void => {
             status: 200
         });
     });
-};
+
+export const validationRoute = router;

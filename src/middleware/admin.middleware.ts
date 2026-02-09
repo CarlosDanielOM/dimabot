@@ -4,6 +4,7 @@ import type { AuthRequest } from './types.js';
 import { error } from '../utils/logger.js';
 
 export async function adminMiddleware(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
+    console.log('adminMiddleware');
     try {
         if (!req.user || !req.user.id) {
             res.status(401).json({

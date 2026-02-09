@@ -8,9 +8,9 @@ import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { error as logError } from "../../utils/logger.js";
 import { incrementSiteAnalytics, decrementSiteAnalytics } from "../../utils/siteanalytics.js";
 
-export const userRoute = (app: express.Application): void => {
+const router = express.Router();
 
-    app.get('/', async (req: Request, res: Response) => {
+router.get('/', async (req: Request, res: Response) => {
         try {
             const username = req.query.username as string;
 
@@ -57,7 +57,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/:channelID', async (req: Request, res: Response) => {
+router.get('/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -88,7 +88,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/scopes/:userID', async (req: Request, res: Response) => {
+router.get('/scopes/:userID', async (req: Request, res: Response) => {
         try {
             const { userID } = req.params;
             const userIdStr = Array.isArray(userID) ? userID[0] : userID;
@@ -122,7 +122,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/premium', async (req: Request, res: Response) => {
+router.post('/premium', async (req: Request, res: Response) => {
         try {
             const { channel, channelID } = req.body;
 
@@ -163,7 +163,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/active/:channel', async (req: Request, res: Response) => {
+router.get('/active/:channel', async (req: Request, res: Response) => {
         try {
             const { channel } = req.params;
 
@@ -200,7 +200,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.put('/active/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+router.put('/active/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -248,7 +248,7 @@ export const userRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/chat/:channelID', async (req: Request, res: Response) => {
+router.post('/chat/:channelID', async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -299,4 +299,5 @@ export const userRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const userRoute = router;

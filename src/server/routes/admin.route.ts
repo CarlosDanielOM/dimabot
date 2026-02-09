@@ -5,10 +5,9 @@ import { error as logError } from "../../utils/logger.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { AdminSchema } from "../../schemas/admin.schema.js";
 
-export const adminRoute = (app: express.Application): void => {
-    app.use(authMiddleware as any);
+const router = express.Router();
 
-    app.get('/:channelID', async (req: Request, res: Response) => {
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -100,7 +99,7 @@ export const adminRoute = (app: express.Application): void => {
         }
     });
 
-    app.get('/:channelID/:adminID', async (req: Request, res: Response) => {
+router.get('/:channelID/:adminID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, adminID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -140,7 +139,7 @@ export const adminRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/:channelID', async (req: Request, res: Response) => {
+router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -216,7 +215,7 @@ export const adminRoute = (app: express.Application): void => {
         }
     });
 
-    app.delete('/:channelID/:adminID', async (req: Request, res: Response) => {
+router.delete('/:channelID/:adminID', authMiddleware as any, async (req: Request, res: Response) => {
         try {
             const { channelID, adminID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
@@ -264,4 +263,5 @@ export const adminRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const adminRoute = router;

@@ -95,9 +95,9 @@ function validateTierLimits(planTier: string | null | undefined, rules: string[]
     return { valid: true };
 }
 
-export const aiPersonalityRoute = (app: express.Application): void => {
+const router = express.Router();
 
-    app.get('/:channelID', async (req: Request, res: Response) => {
+router.get('/:channelID', async (req: Request, res: Response) => {
         const channelID = req.params.channelID;
 
         try {
@@ -148,7 +148,7 @@ export const aiPersonalityRoute = (app: express.Application): void => {
         }
     });
 
-    app.put('/:channelID', authMiddleware as any, async (req: any, res: Response) => {
+router.put('/:channelID', authMiddleware as any, async (req: any, res: Response) => {
         const channelID = req.params.channelID;
         const body = req.body as UpdatePersonalityRequest;
 
@@ -228,7 +228,7 @@ export const aiPersonalityRoute = (app: express.Application): void => {
         }
     });
 
-    app.post('/:channelID/known-users', authMiddleware as any, async (req: any, res: Response) => {
+router.post('/:channelID/known-users', authMiddleware as any, async (req: any, res: Response) => {
         const channelID = req.params.channelID;
         const body = req.body as AddKnownUserRequest;
 
@@ -326,4 +326,5 @@ export const aiPersonalityRoute = (app: express.Application): void => {
             });
         }
     });
-};
+
+export const aiPersonalityRoute = router;
