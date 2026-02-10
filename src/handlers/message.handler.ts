@@ -228,9 +228,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: gameResult.message };
                 }
                 break;
-            case 'addModerator':
+            case 'mod':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !addModerator @username' };
+                    res = { error: true, message: 'Usage: !mod @username' };
                     break;
                 }
                 const addModeratorResult = await indexCommands.addModerator(channelID, streamerArgument);
@@ -240,9 +240,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: addModeratorResult.message };
                 }
                 break;
-            case 'removeModerator':
+            case 'unmod':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !removeModerator @username' };
+                    res = { error: true, message: 'Usage: !unmod @username' };
                     break;
                 }
                 const removeModeratorResult = await indexCommands.removeModerator(channelID, streamerArgument);
@@ -300,9 +300,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: miyulootResult.message };
                 }
                 break;
-            case 'addVip':
+            case 'vip':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !addVip @username [duration]' };
+                    res = { error: true, message: 'Usage: !vip @username [duration]' };
                     break;
                 }
                 const addVipResult = await indexCommands.addVip(channelID, streamerArgument, tags);
@@ -312,9 +312,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: addVipResult.message };
                 }
                 break;
-            case 'removeVip':
+            case 'unvip':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !removeVip @username' };
+                    res = { error: true, message: 'Usage: !unvip @username' };
                     break;
                 }
                 const removeVipResult = await indexCommands.removeVip(channelID, streamerArgument);
@@ -325,33 +325,79 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 }
                 break;
             case 'poll':
-                let pollAction = 'END';
-                let pollArgs = streamerArgument;
-                if (streamerArgument) {
-                    const parts = streamerArgument.split(' ');
-                    pollAction = parts[0].toUpperCase();
-                    pollArgs = parts.slice(1).join(' ');
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !poll Title;Choice1/Choice2;duration' };
+                    break;
                 }
-                const pollResult = await indexCommands.poll(pollAction, channelID, pollArgs);
+                const pollResult = await indexCommands.poll('CREATE', channelID, streamerArgument);
                 if (pollResult.error) {
-                    res = { error: true, message: pollResult.message || 'Error con poll' };
+                    res = { error: true, message: pollResult.message || 'Error al crear poll' };
                 } else {
                     res = { error: false, message: pollResult.message };
                 }
                 break;
-            case 'prediction':
-                let predictionAction = 'CANCELLED';
-                let predictionArgs = streamerArgument;
-                if (streamerArgument) {
-                    const parts = streamerArgument.split(' ');
-                    predictionAction = parts[0].toUpperCase();
-                    predictionArgs = parts.slice(1).join(' ');
+            case 'endpoll':
+                const endPollResult = await indexCommands.poll('END', channelID, '');
+                if (endPollResult.error) {
+                    res = { error: true, message: endPollResult.message || 'Error al terminar poll' };
+                } else {
+                    res = { error: false, message: endPollResult.message };
                 }
-                const predictionResult = await indexCommands.prediction(predictionAction, channelID, predictionArgs);
+                break;
+            case 'archivepoll':
+                const archivePollResult = await indexCommands.poll('ARCHIVE', channelID, '');
+                if (archivePollResult.error) {
+                    res = { error: true, message: archivePollResult.message || 'Error al archivar poll' };
+                } else {
+                    res = { error: false, message: archivePollResult.message };
+                }
+                break;
+            case 'terminatepoll':
+                const terminatePollResult = await indexCommands.poll('TERMINATE', channelID, '');
+                if (terminatePollResult.error) {
+                    res = { error: true, message: terminatePollResult.message || 'Error al terminar poll' };
+                } else {
+                    res = { error: false, message: terminatePollResult.message };
+                }
+                break;
+            case 'prediction':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !prediction Title;Outcome1/Outcome2;duration' };
+                    break;
+                }
+                const predictionResult = await indexCommands.prediction('CREATE', channelID, streamerArgument);
                 if (predictionResult.error) {
-                    res = { error: true, message: predictionResult.message || 'Error con prediction' };
+                    res = { error: true, message: predictionResult.message || 'Error al crear prediction' };
                 } else {
                     res = { error: false, message: predictionResult.message };
+                }
+                break;
+            case 'resolveprediction':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !resolveprediction 1' };
+                    break;
+                }
+                const resolvePredictionResult = await indexCommands.prediction('RESOLVED', channelID, streamerArgument);
+                if (resolvePredictionResult.error) {
+                    res = { error: true, message: resolvePredictionResult.message || 'Error al resolver prediction' };
+                } else {
+                    res = { error: false, message: resolvePredictionResult.message };
+                }
+                break;
+            case 'cancelprediction':
+                const cancelPredictionResult = await indexCommands.prediction('CANCELLED', channelID, '');
+                if (cancelPredictionResult.error) {
+                    res = { error: true, message: cancelPredictionResult.message || 'Error al cancelar prediction' };
+                } else {
+                    res = { error: false, message: cancelPredictionResult.message };
+                }
+                break;
+            case 'lockprediction':
+                const lockPredictionResult = await indexCommands.prediction('LOCKED', channelID, '');
+                if (lockPredictionResult.error) {
+                    res = { error: true, message: lockPredictionResult.message || 'Error al bloquear prediction' };
+                } else {
+                    res = { error: false, message: lockPredictionResult.message };
                 }
                 break;
             default:
