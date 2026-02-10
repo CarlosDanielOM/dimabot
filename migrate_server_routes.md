@@ -102,7 +102,7 @@ Priority 2 - Medium (5 files):
 
 Priority 3 - Complex (6 files):
 [x] aiPersonality.route.ts  - Agent: ___ ✅ DONE
-[ ] trigger.route.ts        - Agent: ___
+[x] trigger.route.ts        - Agent: ___ ✅ DONE
 [x] reward.route.ts         - Agent: ___ ✅ DONE
 [ ] site.route.ts           - Agent: ___ (SKIP if TS exists)
 [ ] dev.route.ts            - Agent: ___
@@ -837,11 +837,11 @@ For each migrated route:
 - [ ] aiPersonality.routes.ts
 
 **Agent 4: Complex Routes (Priority 3)**
-- [ ] trigger.routes.ts
-- [ ] reward.routes.ts
+- [x] trigger.routes.ts ✅ DONE
+- [x] reward.routes.ts ✅ DONE
 - [ ] site.routes.ts (check first)
 - [ ] dev.routes.ts
-- [ ] auth.routes.ts
+- [x] auth.routes.ts ✅ DONE
 
 ### Coordination:
 - Update checklist after each completion
