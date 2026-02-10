@@ -14,6 +14,7 @@ import { authRoute } from "./routes/auth.route.js";
 import { aiPersonalityRoute } from "./routes/aiPersonality.route.js";
 import { rewardRoute } from "./routes/reward.route.js";
 import { triggerRoute } from "./routes/trigger.route.js";
+import { siteRoute } from "./routes/site.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -58,6 +59,9 @@ export const server = async (): Promise<Express.Application> => {
         
         // Setup trigger routes
         app.use('/triggers', triggerRoute);
+
+        // Setup site routes
+        app.use('/site', siteRoute);
         
         //? Route imports
 
