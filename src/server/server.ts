@@ -15,6 +15,7 @@ import { aiPersonalityRoute } from "./routes/aiPersonality.route.js";
 import { rewardRoute } from "./routes/reward.route.js";
 import { triggerRoute } from "./routes/trigger.route.js";
 import { siteRoute } from "./routes/site.route.js";
+import { polarshWebhook } from "./routes/webhooks/polarsh.webhook.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -62,7 +63,10 @@ export const server = async (): Promise<Express.Application> => {
 
         // Setup site routes
         app.use('/site', siteRoute);
-        
+
+        // Setup webhooks
+        app.use('/webhooks/polarsh', polarshWebhook);
+
         //? Route imports
 
         //? Webhooks Endpoints

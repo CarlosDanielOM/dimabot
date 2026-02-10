@@ -76,8 +76,7 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
             }
         }
 
-        const existingEvent = await EventSchema.findOne({ type: eventType as string });
-        // @ts-ignore
+        const existingEvent = await EventSchema.findOne({ type: eventType });
         if (existingEvent) {
             return res.status(409).json({
                 error: true,
@@ -135,7 +134,9 @@ router.get('/events', authMiddleware as any, async (req: Request, res: Response)
 
 router.get('/events/:type', authMiddleware as any, async (req: Request, res: Response) => {
     try {
-        const event = await EventSchema.findOne({ type: req.params.type });
+        const { type } = req.params;
+        const typeStr = Array.isArray(type) ? type[0] : type;
+        const event = await EventSchema.findOne({ type: typeStr });
 
         if (!event) {
             return res.status(404).json({
@@ -168,7 +169,10 @@ router.get('/events/:type', authMiddleware as any, async (req: Request, res: Res
 router.patch('/events/:id', authMiddleware as any, async (req: Request, res: Response) => {
     let event;
     try {
-        if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+        const { id } = req.params;
+        const idStr = Array.isArray(id) ? id[0] : id;
+
+        if (!mongoose.Types.ObjectId.isValid(idStr)) {
             return res.status(400).json({
                 error: true,
                 message: 'Invalid ID',
@@ -176,7 +180,7 @@ router.patch('/events/:id', authMiddleware as any, async (req: Request, res: Res
             });
         }
 
-        event = await EventSchema.findByIdAndUpdate(req.params.id, req.body, { new: true });
+        event = await EventSchema.findByIdAndUpdate(idStr, req.body, { new: true });
 
         if (!event) {
             return res.status(404).json({
