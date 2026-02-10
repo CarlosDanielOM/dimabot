@@ -109,11 +109,20 @@ User: "YOU JUST DELETED MY DATA!"
 ## Migration Conventions
 
 ### File Naming Convention
+
+**Bot Functions:**
 - **Pattern:** `what_the_file_is.parent_folder.ts`
 - **Examples:**
   - `add_vip.channel.ts` (for VIP management)
   - `get_editors.channel.ts` (for channel editors)
   - `send_message.chat.ts` (for chat messages)
+
+**Server Routes:**
+- **Pattern:** `resource.route.ts` (singular)
+- **Examples:**
+  - `admin.route.ts` (for admin CRUD operations)
+  - `reward.route.ts` (for reward management)
+  - `user.route.ts` (for user operations)
 
 ### Dependency Mapping
 
@@ -179,6 +188,7 @@ export async function exampleFunction(param: string): Promise<Response> {
 
 ### Example Migration Pattern
 
+**Bot Function:**
 ```typescript
 // Old JavaScript
 async function addChannelVIP(channelID, userID) {
@@ -211,6 +221,48 @@ export async function addChannelVIP(channelID: string, userID: string): Promise<
 }
 ```
 
+**Server Route:**
+```typescript
+// Old JavaScript
+const express = require('express');
+const router = express.Router();
+router.use(auth);
+
+router.get('/:channelID', async (req, res) => {
+    // ... implementation
+});
+
+module.exports = router;
+
+// New TypeScript
+import express, { type Request, type Response } from 'express';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+
+const router = express.Router();
+
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    try {
+        const { channelID } = req.params;
+        const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
+        // ... implementation
+    } catch (error) {
+        console.error('Error in GET /:channelID:', {
+            channelID: req.params.channelID,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({
+            error: true,
+            message: 'Internal server error',
+            status: 500
+        });
+    }
+});
+
+export const resourceNameRoute = router;
+```
+
 ### Index File Updates
 
 When creating new function files:
@@ -238,6 +290,78 @@ When caching Twitch-related data, use the following pattern:
 - Use plural form for collections (moderators, editors, polls)
 - Use hierarchical structure with `:` as separator (like folder structure)
 - For nested data, add subcategories after the main category
+
+### Server Routes Style
+
+**File Structure:**
+```typescript
+import express, { type Request, type Response } from 'express';
+import { authMiddleware } from '../../middleware/auth.middleware.js';
+// other imports...
+
+const router = express.Router();
+
+// Define routes on router
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    // Implementation
+});
+
+router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    // Implementation
+});
+
+// Export router
+export const resourceNameRoute = router;
+```
+
+**Route Registration (in server.ts):**
+```typescript
+import { resourceNameRoute } from './routes/resource.route.js';
+
+// Inside server() function:
+app.use('/resource-path', resourceNameRoute);
+```
+
+**Key Points:**
+- Use `express.Router()` instead of a function taking app as parameter
+- Export router as a named export: `export const resourceNameRoute = router`
+- In server.ts, mount with `app.use('/path', route)`
+- Always use `.js` extensions for imports
+- Apply `authMiddleware as any` to routes that require authentication
+- Handle array params: `Array.isArray(param) ? param[0] : param`
+
+**Error Handling Pattern:**
+```typescript
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    try {
+        // Implementation
+    } catch (error) {
+        console.error('Error in GET /:channelID:', {
+            channelID: req.params.channelID,
+            query: req.query,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({
+            error: true,
+            message: 'Internal server error',
+            status: 500
+        });
+    }
+});
+```
+
+**Response Format:**
+```typescript
+res.status(200).json({
+    error: false,
+    message: 'Success message',
+    status: 200,
+    data: responseData
+});
+```
 
 ---
 
