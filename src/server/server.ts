@@ -65,7 +65,7 @@ export const server = async (): Promise<Express.Application> => {
         app.use('/site', siteRoute);
 
         // Setup webhooks
-        app.use('/webhooks/polarsh', polarshWebhook);
+        app.use('/polar/webhook', polarshWebhook);
 
         //? Route imports
 

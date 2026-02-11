@@ -109,7 +109,7 @@ export async function storeChatMessageEmbedding(data: IChatMessageData): Promise
             embeddingTime,
             qdrantTime,
             totalTime
-        });
+        }, { destination: 'cache' });
 
         return {
             error: false,

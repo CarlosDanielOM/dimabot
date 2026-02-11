@@ -36,37 +36,37 @@ router.get('/:channelID', async (req: Request, res: Response) => {
     });
 
     // POST /clip/test - Test endpoint for promo
-    router.post('/clip/test', async (req: Request, res: Response) => {
-        try {
-            const { channelID, streamer } = req.body;
+router.post('/test', async (req: Request, res: Response) => {
+    try {
+        const { channelID, streamer } = req.body;
 
-            if (!channelID || !streamer) {
-                return res.status(400).json({
-                    error: true,
-                    message: 'channelID and streamer are required',
-                    status: 400
-                });
-            }
-
-            const result = await promo(channelID, streamer);
-
-            if (result.error) {
-                return res.status(result.status || 500).json(result);
-            }
-
-            res.status(200).json(result);
-        } catch (error) {
-            console.error('Error in clip test:', {
-                body: req.body,
-                error: error instanceof Error ? error.message : String(error),
-                timestamp: new Date().toISOString()
-            });
-            res.status(500).json({
+        if (!channelID || !streamer) {
+            return res.status(400).json({
                 error: true,
-                message: 'Internal server error',
-                status: 500
+                message: 'channelID and streamer are required',
+                status: 400
             });
         }
-    });
+
+        const result = await promo(channelID, streamer);
+
+        if (result.error) {
+            return res.status(result.status || 500).json(result);
+        }
+
+        res.status(200).json(result);
+    } catch (error) {
+        console.error('Error in clip test:', {
+            body: req.body,
+            error: error instanceof Error ? error.message : String(error),
+            timestamp: new Date().toISOString()
+        });
+        res.status(500).json({
+            error: true,
+            message: 'Internal server error',
+            status: 500
+        });
+    }
+});
 
 export const clipRoute = router;

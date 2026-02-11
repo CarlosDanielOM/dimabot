@@ -20,6 +20,9 @@ import { sendTwitchChatMessage } from "../functions/chats/send_message.chat.js";
 import Commands from "../classes/command.class.js";
 import { sumimetroCommand } from "../commands/sumimetro.command.js";
 import { indexCommands } from "../commands/index.commands.js";
+import { sendAnnouncement } from "../functions/chats/announcement.chat.js";
+import { clearChat } from "../functions/chats/clear_chat.chat.js";
+import { createCommand, deleteCommand, editCommand } from "../commands/command_manager.command.js";
 
 const modID = '698614112';
 const CHANNEL_INSTANCES = new Map<string, COOLDOWN>();
@@ -111,6 +114,10 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
             commandEnabled = String(commandDBData.command.enabled ?? false);
             commandLevel = String(commandDBData.command.userLevel ?? 0);
         }
+
+        if(userLevel < parseInt(commandLevel, 10)) {
+            return;
+        }
         
         
         if(channelInstance!.hasCooldown(command)) {
@@ -145,6 +152,22 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: true, message: shoutoutResult.message || 'Failed to send shoutout' };
                 }
                 break;
+            case 'anuncio':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !anuncio <message>' };
+                    break;
+                }
+                if (streamerArgument.length > 300) {
+                    res = { error: true, message: 'Message cannot be longer than 300 characters' };
+                    break;
+                }
+                const anuncioResult = await sendAnnouncement(channelID, messageEventData.chatter_user_id || modID, streamerArgument);
+                if (anuncioResult.error) {
+                    res = { error: true, message: anuncioResult.message || 'Failed to send announcement' };
+                } else {
+                    res = { error: false, message: 'Announcement sent' };
+                }
+                break;
             case 'ruletarusa':
                 const ruletarusaBadges = await formatBadges({badges: messageEventData.badges});
                 const ruletarusaMod = ruletarusaBadges.isMod;
@@ -170,7 +193,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 break;
             case 'disableCommand':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !disableCommand !commandname' };
+                    res = { error: true, message: 'Usage: !disable <command name>' };
                     break;
                 }
                 const disableCommandResult = await indexCommands.disableCommand(channelID, streamerArgument);
@@ -182,7 +205,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 break;
             case 'enableCommand':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !enableCommand !commandname' };
+                    res = { error: true, message: 'Usage: !enable <command name>' };
                     break;
                 }
                 const enableCommandResult = await indexCommands.enableCommand(channelID, streamerArgument);
@@ -192,7 +215,51 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: enableCommandResult.message };
                 }
                 break;
-            case 'commandList':
+            case 'createCommand':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !cc <command name> <command function>' };
+                    break;
+                }
+                const createCommandResult = await createCommand(channelID, streamerArgument);
+                if (createCommandResult.error) {
+                    res = { error: true, message: createCommandResult.message || 'Error creating command' };
+                } else {
+                    res = { error: false, message: createCommandResult.message || 'Command created' };
+                }
+                break;
+            case 'deleteCommand':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !dc <command name>' };
+                    break;
+                }
+                const deleteCommandResult = await deleteCommand(channelID, streamerArgument, userLevel);
+                if (deleteCommandResult.error) {
+                    res = { error: true, message: deleteCommandResult.message || 'Error deleting command' };
+                } else {
+                    res = { error: false, message: deleteCommandResult.message || 'Command deleted' };
+                }
+                break;
+            case 'editCommand':
+                if (!streamerArgument) {
+                    res = { error: true, message: 'Usage: !ec <command name> <command function>' };
+                    break;
+                }
+                const editCommandResult = await editCommand(channelID, streamerArgument, userLevel);
+                if (editCommandResult.error) {
+                    res = { error: true, message: editCommandResult.message || 'Error updating command' };
+                } else {
+                    res = { error: false, message: editCommandResult.message || 'Command updated' };
+                }
+                break;
+            case 'clearChat':
+                const clearChatResult = await clearChat(channelID, messageEventData.chatter_user_id || modID);
+                if (clearChatResult.error) {
+                    res = { error: true, message: clearChatResult.message || 'Failed to clear chat' };
+                } else {
+                    res = { error: false, message: `Chat cleared by ${messageEventData.chatter_user_name}` };
+                }
+                break;
+            case 'commands':
                 const commandListResult = await indexCommands.commandList(channelID, userLevel);
                 if (commandListResult.error) {
                     res = { error: true, message: commandListResult.message || 'Error al listar comandos' };
@@ -201,11 +268,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 }
                 break;
             case 'followage':
-                if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !followage @username' };
-                    break;
-                }
-                const followageResult = await indexCommands.followage(channelID, streamerArgument);
+                const followageResult = await indexCommands.followage(channelID, streamerArgument || messageEventData.chatter_user_login!);
                 if (followageResult.error) {
                     res = { error: true, message: followageResult.message || 'Error al obtener followage' };
                 } else {
@@ -260,7 +323,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: createClipResult.message };
                 }
                 break;
-            case 'onlyEmotes':
+            case 'onlyemotes':
                 const onlyEmotesResult = await indexCommands.onlyEmotes(channelID, streamerArgument);
                 if (onlyEmotesResult.error) {
                     res = { error: true, message: onlyEmotesResult.message || 'Error al cambiar modo only emotes' };
@@ -268,7 +331,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: onlyEmotesResult.message };
                 }
                 break;
-            case 'speech':
+            case 'speach':
                 const speechResult = await indexCommands.speech(channelID, tags, streamerArgument);
                 if (speechResult.error) {
                     res = { error: true, message: speechResult.message || 'Error al enviar speech' };
@@ -352,7 +415,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: archivePollResult.message };
                 }
                 break;
-            case 'terminatepoll':
+            case 'cancelpoll':
                 const terminatePollResult = await indexCommands.poll('TERMINATE', channelID, '');
                 if (terminatePollResult.error) {
                     res = { error: true, message: terminatePollResult.message || 'Error al terminar poll' };
@@ -360,9 +423,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: terminatePollResult.message };
                 }
                 break;
-            case 'prediction':
+            case 'predi':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !prediction Title;Outcome1/Outcome2;duration' };
+                    res = { error: true, message: 'Usage: !predi Title;Outcome1/Outcome2;duration' };
                     break;
                 }
                 const predictionResult = await indexCommands.prediction('CREATE', channelID, streamerArgument);
@@ -372,9 +435,9 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: predictionResult.message };
                 }
                 break;
-            case 'resolveprediction':
+            case 'endpredi':
                 if (!streamerArgument) {
-                    res = { error: true, message: 'Usage: !resolveprediction 1' };
+                    res = { error: true, message: 'Usage: !endpredi <option number>' };
                     break;
                 }
                 const resolvePredictionResult = await indexCommands.prediction('RESOLVED', channelID, streamerArgument);
@@ -384,7 +447,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: resolvePredictionResult.message };
                 }
                 break;
-            case 'cancelprediction':
+            case 'cancelpredi':
                 const cancelPredictionResult = await indexCommands.prediction('CANCELLED', channelID, '');
                 if (cancelPredictionResult.error) {
                     res = { error: true, message: cancelPredictionResult.message || 'Error al cancelar prediction' };
@@ -392,7 +455,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: cancelPredictionResult.message };
                 }
                 break;
-            case 'lockprediction':
+            case 'lockpredi':
                 const lockPredictionResult = await indexCommands.prediction('LOCKED', channelID, '');
                 if (lockPredictionResult.error) {
                     res = { error: true, message: lockPredictionResult.message || 'Error al bloquear prediction' };

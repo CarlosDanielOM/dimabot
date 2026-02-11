@@ -1,6 +1,7 @@
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import { getAppToken, getBotToken } from './tokens.js';
 import { notifyDevelopers } from './notifications.js';
+import { debug } from './logger.js';
 
 interface TwitchHeader {
     'Client-Id': string;
@@ -61,31 +62,41 @@ export const getTwitchBotHeader = async (): Promise<TwitchHeaderResult> => {
 export const getTwitchStreamerHeaderById = async (streamerId: string): Promise<TwitchHeaderResult> => {
     const streamer = await TwitchStreamers.getTwitchAccountById(streamerId);
     if (!streamer) {
+        await debug({ function: 'getTwitchStreamerHeaderById', streamerId, error: 'Streamer not found' }, { destination: 'cache' });
         return {
             error: true,
             message: `[⚠️] Streamer not found for ID: ${streamerId} [/⚠️]`
         };
     }
 
-    if (!streamer.access_token) {
-        return {
-            error: true,
-            message: '[⚠️] Streamer does not have valid permissions token to access this feature, please reauthorize streamer again in https://domdimabot.com [/⚠️]'
-        };
-    }
-
     if (streamer.has_permissions !== 'true') {
+        await debug({ function: 'getTwitchStreamerHeaderById', streamerId, error: 'No permissions', has_permissions: streamer.has_permissions }, { destination: 'cache' });
         return {
             error: true,
             message: '[⚠️] Streamer does not have valid permissions to access this feature, please reauthorize streamer again in https://domdimabot.com [/⚠️]'
         };
     }
 
-    twitchStreamerHeader.Authorization = `Bearer ${streamer.access_token}`;
+    const accessToken = await TwitchStreamers.getAccountTokenById(streamerId, 'twitch');
+    
+    if (!accessToken) {
+        await debug({ function: 'getTwitchStreamerHeaderById', streamerId, error: 'Failed to get access token (refresh may have failed)' }, { destination: 'cache' });
+        return {
+            error: true,
+            message: '[⚠️] Streamer does not have valid permissions token to access this feature, please reauthorize streamer again in https://domdimabot.com [/⚠️]'
+        };
+    }
+
+    await debug({ function: 'getTwitchStreamerHeaderById', streamerId, success: true, tokenLength: accessToken.length }, { destination: 'cache' });
+
     return {
         error: false,
         message: 'Success',
-        header: twitchStreamerHeader
+        header: {
+            'Client-Id': process.env.CLIENT_ID!,
+            'Authorization': `Bearer ${accessToken}`,
+            'Content-Type': 'application/json'
+        }
     };
 };
 

@@ -100,7 +100,7 @@ class EmbeddingBatcher {
                 embeddingTime,
                 totalTime,
                 attempt
-            });
+            }, { destination: 'cache' });
         } catch (err) {
             if (attempt < this.MAX_RETRIES) {
                 const delay = attempt * 1000;

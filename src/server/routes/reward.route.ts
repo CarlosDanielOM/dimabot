@@ -103,56 +103,6 @@ async function patchTwitchReward(channelID: string, body: any, rewardID: string)
     return result.data[0];
 }
 
-router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
-    try {
-        const { channelID } = req.params;
-        const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
-
-        const { type, id } = req.query;
-
-        if (id) {
-            if (!mongoose.Types.ObjectId.isValid(id as string)) {
-                return res.status(400).json({
-                    error: true,
-                    message: 'Invalid ID',
-                    status: 400
-                });
-            }
-            const reward = await RedemptionRewardSchema.find({ channelID: channelIdStr, _id: id });
-            return res.status(200).json({
-                data: reward,
-                total: reward.length
-            });
-        } else if (type) {
-            const rewards = await RedemptionRewardSchema.find({ channelID: channelIdStr, type: type });
-            return res.status(200).json({
-                data: rewards,
-                total: rewards.length
-            });
-        } else {
-            const rewards = await RedemptionRewardSchema.find({ channelID: channelIdStr });
-            return res.status(200).json({
-                data: rewards,
-                total: rewards.length
-            });
-        }
-    } catch (error) {
-        console.error('Error in GET /:channelID:', {
-            channelID: req.params.channelID,
-            query: req.query,
-            error: error instanceof Error ? error.message : String(error),
-            stack: error instanceof Error ? error.stack : undefined,
-            timestamp: new Date().toISOString()
-        });
-
-        res.status(500).json({
-            error: true,
-            message: 'Internal server error',
-            status: 500
-        });
-    }
-});
-
 router.get('/twitch/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
     try {
         const { channelID } = req.params;
@@ -196,6 +146,56 @@ router.get('/twitch/:channelID', authMiddleware as any, async (req: Request, res
     } catch (error) {
         console.error('Error in GET /twitch/:channelID:', {
             channelID: req.params.channelID,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+
+        res.status(500).json({
+            error: true,
+            message: 'Internal server error',
+            status: 500
+        });
+    }
+});
+
+router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    try {
+        const { channelID } = req.params;
+        const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
+
+        const { type, id } = req.query;
+
+        if (id) {
+            if (!mongoose.Types.ObjectId.isValid(id as string)) {
+                return res.status(400).json({
+                    error: true,
+                    message: 'Invalid ID',
+                    status: 400
+                });
+            }
+            const reward = await RedemptionRewardSchema.find({ channelID: channelIdStr, _id: id });
+            return res.status(200).json({
+                data: reward,
+                total: reward.length
+            });
+        } else if (type) {
+            const rewards = await RedemptionRewardSchema.find({ channelID: channelIdStr, type: type });
+            return res.status(200).json({
+                data: rewards,
+                total: rewards.length
+            });
+        } else {
+            const rewards = await RedemptionRewardSchema.find({ channelID: channelIdStr });
+            return res.status(200).json({
+                data: rewards,
+                total: rewards.length
+            });
+        }
+    } catch (error) {
+        console.error('Error in GET /:channelID:', {
+            channelID: req.params.channelID,
+            query: req.query,
             error: error instanceof Error ? error.message : String(error),
             stack: error instanceof Error ? error.stack : undefined,
             timestamp: new Date().toISOString()

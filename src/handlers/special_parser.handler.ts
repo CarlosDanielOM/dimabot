@@ -118,6 +118,8 @@ const MANIFEST: ICommandManifest = {
     'start.poll': 'free',
     'raid': 'free',
     'unraid': 'free',
+    'ad': 'free',
+    'ad.time': 'free',
     'ai': 'free'
 };
 
@@ -590,6 +592,20 @@ async function resolveCommandSwitch(
             return String(result.total || 0);
         }
 
+        case 'twitch.channel': {
+            if(broadcasterName) return String(broadcasterName);
+
+            let streamer = await TwitchStreamers.getTwitchAccountById(broadcasterID);
+
+            if(!streamer) {
+                const result = await ChannelFunctions.getChannelInformation(broadcasterID, true);
+                if(result.error) {
+                    return `Streamer with provided ID does not exist`;
+                }
+                return String(result.data.broadcaster_name || 'Unkown');
+            }
+        }
+
         case 'set.game':
             return '⚠️ This feature is being implemented';
 
@@ -635,6 +651,12 @@ async function resolveCommandSwitch(
             }
             await ChatFunctions.sendTwitchChatMessage(channelID, 'Raid cancelled!');
             return '';
+        }
+
+        case 'ad':
+        case 'ad.time': {
+            if(eventData?.duration_seconds) return String(eventData.duration_seconds) || '0';
+            return '0';
         }
 
         case 'ai':

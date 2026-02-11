@@ -4,7 +4,7 @@ import { handlePolarSHEvent } from '../../../handlers/polarsh.handler.js';
 
 const router = express.Router();
 
-router.post("/webhook", express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
+router.post("/", express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
     try {
         const secret = process.env.POLARSH_WEBHOOK_SECRET;
         if (!secret) {

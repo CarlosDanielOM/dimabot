@@ -117,47 +117,47 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
             
-            // Get token and expiration from cache
             let token = await cache.hGet(`accounts:${account_type}:${id}:data`, 'access_token');
             let expiresAt = await cache.hGet(`accounts:${account_type}:${id}:data`, 'expires_at');
             
-            // Check if token exists and is not expired
+            await error({ function: 'TwitchStreamers.getAccountTokenById', id, account_type, hasToken: !!token, hasExpiresAt: !!expiresAt, expiresAt: expiresAt || 'not set' }, { channelId: id, destination: 'cache' });
+
             if (token && expiresAt) {
                 const expiration = parseInt(expiresAt);
                 const now = Math.floor(Date.now() / 1000);
                 
-                // If token is still valid (with 5 min buffer), return it
                 if (now < expiration - 300) {
+                    await error({ function: 'TwitchStreamers.getAccountTokenById', id, action: 'returning_cached_token', secondsUntilExpiry: expiration - now }, { channelId: id, destination: 'cache' });
                     return token;
                 }
+                
+                await error({ function: 'TwitchStreamers.getAccountTokenById', id, action: 'token_expired_refreshing', secondsSinceExpiry: now - expiration }, { channelId: id, destination: 'cache' });
             }
             
-            // Token not in cache or expired, refresh
             const refreshToken = await this.getAccountRefreshTokenById(id, account_type);
 
             if (!refreshToken) {
-                await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh token not found for ${account_type}:${id}` }, { channelId: id, destination: 'both' });
+                await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh token not found for ${account_type}:${id}` }, { channelId: id, destination: 'cache' });
                 return null;
             }
             
-            // For Twitch, use the simplified refresh function
             if (account_type === 'twitch') {
                 const { refreshTwitchToken } = await import('../utils/tokens.js');
                 const refreshResult = await refreshTwitchToken(refreshToken, id);
 
                 if (!refreshResult.token) {
-                    await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Failed to refresh Twitch token for ${id}` }, { channelId: id, destination: 'both' });
+                    await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Failed to refresh Twitch token for ${id}` }, { channelId: id, destination: 'cache' });
                     return null;
                 }
 
+                await error({ function: 'TwitchStreamers.getAccountTokenById', id, action: 'token_refreshed_successfully' }, { channelId: id, destination: 'cache' });
                 return refreshResult.token;
             }
 
-            // For other platforms (Kick, etc.), implement refresh logic later
-            await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh not implemented for ${account_type}` }, { channelId: id, destination: 'both' });
+            await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Refresh not implemented for ${account_type}` }, { channelId: id, destination: 'cache' });
             return null;
         } catch (err) {
-            await error({ function: 'TwitchStreamers.getAccountTokenById', id, account_type, error: err instanceof Error ? err.message : String(err) }, { channelId: id, destination: 'both' });
+            await error({ function: 'TwitchStreamers.getAccountTokenById', id, account_type, error: err instanceof Error ? err.message : String(err) }, { channelId: id, destination: 'cache' });
             return null;
         }
     }

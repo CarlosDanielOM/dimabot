@@ -244,7 +244,7 @@ export async function generateEmbeddings(texts: string[], model: string = 'baai/
             model,
             tokens: responseData.usage?.total_tokens,
             duration
-        });
+        }, { destination: 'cache' });
 
         return {
             error: false,
