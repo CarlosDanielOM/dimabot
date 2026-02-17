@@ -62,7 +62,7 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             const valueResult = await evaluate(setNode.value, context);
             const value = String(valueResult.value);
             context.variables.set(setNode.name, value);
-            return { value, context: valueResult.context };
+            return { value: '', context: valueResult.context };
         }
         
         case 'function': {
