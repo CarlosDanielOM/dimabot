@@ -1,0 +1,45 @@
+import type { ExecutionContext, EvaluateResult, AstNode, RootNode, SyntaxDefinition } from './types.js';
+import { parse, parseToAst, printAst } from './parser.js';
+import { tokenize } from './tokenizer.js';
+import { evaluate, createExecutionContext, registerFunction, getFunctionHandler, FunctionHandler } from './evaluator.js';
+import { SyntaxRegistry, createSyntaxRegistry, registerSyntax, parseExpression } from './registry.js';
+
+export type {
+    ExecutionContext,
+    EvaluateResult,
+    AstNode,
+    RootNode,
+    SyntaxDefinition,
+    FunctionHandler
+};
+
+export {
+    parse,
+    parseToAst,
+    printAst,
+    tokenize,
+    evaluate,
+    createExecutionContext,
+    registerFunction,
+    getFunctionHandler,
+    SyntaxRegistry,
+    createSyntaxRegistry,
+    registerSyntax,
+    parseExpression
+};
+
+export async function parseAndEvaluate(
+    input: string,
+    context: Partial<ExecutionContext> = {}
+): Promise<{ result: unknown; context: ExecutionContext }> {
+    const fullContext = createExecutionContext(context);
+    const { ast, error } = parse(input);
+    
+    if (error) {
+        return { result: `[Parse error: ${error}]`, context: fullContext };
+    }
+    
+    const { value, context: resultContext } = await evaluate(ast, fullContext);
+    
+    return { result: value, context: resultContext };
+}
