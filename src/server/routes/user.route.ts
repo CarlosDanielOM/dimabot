@@ -7,6 +7,17 @@ import { getDragonflyClient } from "../../utils/databases/dragonfly.database.js"
 import { authMiddleware } from "../../middleware/auth.middleware.js";
 import { error as logError } from "../../utils/logger.js";
 import { incrementSiteAnalytics, decrementSiteAnalytics } from "../../utils/siteanalytics.js";
+import EventsubSchema from "../../schemas/eventsub.schema.js";
+import { subscribeTwitchEvent, unsubscribeTwitchEvent } from "../../utils/eventsub.js";
+
+interface UserRequest extends Request {
+    user?: {
+        id: string;
+        login: string;
+        display_name: string;
+        profile_image_url?: string;
+    };
+}
 
 const router = express.Router();
 
@@ -248,11 +259,28 @@ router.put('/active/:channelID', authMiddleware as any, async (req: Request, res
         }
     });
 
-router.post('/chat/:channelID', async (req: Request, res: Response) => {
+router.post('/chat/:channelID', authMiddleware as any, async (req: UserRequest, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
             const { enabled } = req.body;
+            const requesterID = req.user?.id;
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    message: 'Authentication required',
+                    error: true,
+                    status: 401
+                });
+            }
+
+            if (requesterID !== channelIdStr) {
+                return res.status(403).json({
+                    message: 'Only the channel owner can toggle chat bot status',
+                    error: true,
+                    status: 403
+                });
+            }
 
             if (typeof enabled !== 'boolean') {
                 return res.status(400).json({
@@ -270,6 +298,65 @@ router.post('/chat/:channelID', async (req: Request, res: Response) => {
                 });
             }
 
+            let eventsubRemovedCount = 0;
+            let eventsubCreated = false;
+            let eventsubRemovalFailed = 0;
+
+            if (!enabled) {
+                const chatEventsubs = await EventsubSchema.find({
+                    channelID: channelIdStr,
+                    type: 'channel.chat.message'
+                }).lean();
+
+                for (const chatEventsub of chatEventsubs) {
+                    const result = await unsubscribeTwitchEvent(chatEventsub.id);
+                    if (!(result as any)?.error) {
+                        eventsubRemovedCount += 1;
+                    } else {
+                        eventsubRemovalFailed += 1;
+                    }
+                }
+
+                if (eventsubRemovalFailed > 0) {
+                    return res.status(502).json({
+                        message: 'Failed to remove one or more chat event subscriptions',
+                        error: true,
+                        status: 502,
+                        data: {
+                            eventsubRemovedCount,
+                            eventsubRemovalFailed
+                        }
+                    });
+                }
+            } else {
+                const existingChatEventsub = await EventsubSchema.findOne({
+                    channelID: channelIdStr,
+                    type: 'channel.chat.message'
+                }).lean();
+
+                if (!existingChatEventsub) {
+                    const response = await subscribeTwitchEvent(
+                        channelIdStr,
+                        'channel.chat.message',
+                        '1',
+                        {
+                            broadcaster_user_id: channelIdStr,
+                            user_id: '698614112'
+                        }
+                    );
+
+                    if ((response as any)?.error) {
+                        return res.status(400).json({
+                            message: (response as any).message || 'Failed to create chat eventsub',
+                            error: true,
+                            status: (response as any).status || 400
+                        });
+                    }
+
+                    eventsubCreated = true;
+                }
+            }
+
             await UsersSchema.findOneAndUpdate(
                 { 'accounts.id': channelIdStr },
                 { $set: { 'accounts.$.chat_enabled': enabled } }
@@ -282,11 +369,19 @@ router.post('/chat/:channelID', async (req: Request, res: Response) => {
 
             res.status(200).json({
                 message: `Chat ${enabled ? 'enabled' : 'disabled'} for channel`,
-                error: false
+                error: false,
+                status: 200,
+                data: {
+                    chatEnabled: enabled,
+                    eventsubRemovedCount,
+                    eventsubCreated,
+                    eventsubRemovalFailed
+                }
             });
         } catch (error) {
             console.error('Error in POST /chat/:channelID:', {
                 channelID: req.params.channelID,
+                requesterID: req.user?.id,
                 body: req.body,
                 error: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined,

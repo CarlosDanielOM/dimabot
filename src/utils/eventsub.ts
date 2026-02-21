@@ -12,6 +12,7 @@ export interface SubscriptionType {
 }
 
 export interface SubscribeTwitchEventResponse {
+    _id?: string;
     id: string;
     status: string;
     type: string;
@@ -61,7 +62,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(twitch channel) is now live! Playing $(twitch game)'
+            message: '$(twitch.channel) is now live! Playing $(twitch.game)'
         }
     },
     {
@@ -71,7 +72,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(twitch channel) is now offline!'
+            message: '$(twitch.channel) is now offline!'
         }
     },
     {
@@ -81,7 +82,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             to_broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(raid channel) is raiding with $(raid viewers) viewers!',
+            message: '$(twitch.channel) is raiding with $(raid.viewers) viewers!',
             clipEnabled: true
         }
     },
@@ -106,7 +107,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: 'Hype train has started! It started at $(hypetrain progress) and will end at $(hypetrain end)'
+            message: 'Hype train has started! It started at $(hypetrain.progress) and will end at $(hypetrain.end)'
         }
     },
     {
@@ -116,7 +117,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: 'Hype train has progressed to level $(hypetrain level)!'
+            message: 'Hype train has progressed to level $(hypetrain.level)!'
         }
     },
     {
@@ -126,7 +127,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: 'Hype train has ended! It ended at level $(hypetrain level) with $(hypetrain progress)% progress!'
+            message: 'Hype train has ended! It ended at level $(hypetrain.level) with $(hypetrain.progress)% progress!'
         }
     },
     {
@@ -137,7 +138,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             moderator_user_id: MOD_ID
         },
         config: {
-            message: '$(shoutout channel) has sent a shoutout to $(twitch channel)!'
+            message: '$(shoutout.channel) has sent a shoutout to $(twitch.channel)!'
         }
     },
     {
@@ -147,7 +148,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(ad time) seconds of ad break has begun!',
+            message: '$(ad.time) seconds of ad break has begun!',
             endMessage: 'Ad break has ended!',
             endEnabled: true
         }
@@ -166,7 +167,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(user) cheered $(cheer amount) bits!'
+            message: '$(user) cheered $(cheer.amount) bits!'
         }
     },
     {
@@ -176,7 +177,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(user) subscribed with $(sub tier) for the first time!'
+            message: '$(user) subscribed with $(sub.tier) for the first time!'
         }
     },
     {
@@ -186,7 +187,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(user) gifted a $(sub tier) subscription to $(gifted user)!'
+            message: '$(user) gifted a $(sub.tier) subscription to $(gifted.user)!'
         }
     },
     {
@@ -196,7 +197,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(user) resubscribed with $(sub tier) for $(sub months) months on a row!'
+            message: '$(user) resubscribed with $(sub.tier) for $(sub.months) months on a row!'
         }
     },
     {
@@ -306,7 +307,29 @@ export async function subscribeTwitchEvent(
 
     await newEventSub.save();
 
-    return subscriptionData;
+    return {
+        _id: newEventSub._id.toString(),
+        id: newEventSub.id,
+        status: newEventSub.status,
+        type: newEventSub.type,
+        version: newEventSub.version,
+        condition: newEventSub.condition,
+        created_at: newEventSub.created_at,
+        transport: newEventSub.transport,
+        cost: newEventSub.cost,
+        channel: newEventSub.channel,
+        channelID: newEventSub.channelID,
+        enabled: newEventSub.enabled,
+        message: newEventSub.message,
+        endMessage: newEventSub.endMessage,
+        endEnabled: newEventSub.endEnabled,
+        minViewers: newEventSub.minViewers,
+        temporalBanMessage: newEventSub.temporalBanMessage,
+        clipEnabled: newEventSub.clipEnabled,
+        delay: newEventSub.delay,
+        cheerTiers: newEventSub.cheerTiers,
+        todayFollows: newEventSub.todayFollows,
+    };
 }
 
 export async function getEventsubs(): Promise<any> {

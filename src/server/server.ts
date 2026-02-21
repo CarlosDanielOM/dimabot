@@ -14,14 +14,21 @@ import { authRoute } from "./routes/auth.route.js";
 import { aiPersonalityRoute } from "./routes/aiPersonality.route.js";
 import { rewardRoute } from "./routes/reward.route.js";
 import { triggerRoute } from "./routes/trigger.route.js";
+import { overlayRoute } from "./routes/overlay.route.js";
 import { siteRoute } from "./routes/site.route.js";
 import { polarshWebhook } from "./routes/webhooks/polarsh.webhook.js";
+import { billingRoute } from "./routes/billing.route.js";
+import { dashboardRoute } from "./routes/dashboard.route.js";
+import { adminSiteRoute } from "./routes/admin_site.route.js";
 
 const __dirname = getDirname(import.meta.url);
 
 export const server = async (): Promise<Express.Application> => {
     try {
         let app = express();
+
+        // Setup webhooks first (raw body required for signature validation)
+        app.use('/polar/webhook', polarshWebhook);
 
         app.use(express.json());
         app.use(express.urlencoded({ extended: true }));
@@ -61,11 +68,20 @@ export const server = async (): Promise<Express.Application> => {
         // Setup trigger routes
         app.use('/triggers', triggerRoute);
 
+        // Setup public overlay routes
+        app.use('/', overlayRoute);
+
         // Setup site routes
         app.use('/site', siteRoute);
 
-        // Setup webhooks
-        app.use('/polar/webhook', polarshWebhook);
+        // Setup billing routes
+        app.use('/billing', billingRoute);
+
+        // Setup dashboard routes
+        app.use('/dashboard', dashboardRoute);
+
+        // Setup internal admin site routes
+        app.use('/admin-site', adminSiteRoute);
 
         //? Route imports
 

@@ -3,6 +3,8 @@ import { parse, parseToAst, printAst } from './parser.js';
 import { tokenize } from './tokenizer.js';
 import { evaluate, createExecutionContext, registerFunction, getFunctionHandler, FunctionHandler } from './evaluator.js';
 import { SyntaxRegistry, createSyntaxRegistry, registerSyntax, parseExpression } from './registry.js';
+import { renderAstWithSourceReference } from './render.js';
+import { registerAllFunctions } from './functions/index.js';
 
 export type {
     ExecutionContext,
@@ -25,13 +27,16 @@ export {
     SyntaxRegistry,
     createSyntaxRegistry,
     registerSyntax,
-    parseExpression
+    parseExpression,
+    renderAstWithSourceReference
 };
 
 export async function parseAndEvaluate(
     input: string,
     context: Partial<ExecutionContext> = {}
 ): Promise<{ result: unknown; context: ExecutionContext }> {
+    registerAllFunctions();
+    
     const fullContext = createExecutionContext(context);
     const { ast, error } = parse(input);
     

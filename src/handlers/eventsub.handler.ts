@@ -6,6 +6,7 @@ import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import { messageHandler } from "./message.handler.js";
 import { raidHandler } from "./raid.handler.js";
 import { cheerHandler } from "./cheer.handler.js";
+import { sendTwitchChatMessage } from "../functions/chats/send_message.chat.js";
 import { redemptionHandler } from "./redemption.handler.js";
 import { followHandler } from "./follow.handler.js";
 import { streamOnlineHandler } from "./stream_online.handler.js";
@@ -71,6 +72,25 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
 
     if(!eventsubData.enabled) return;
 
+    const handleMessageOnlyEvent = async () => {
+        if (!chatEnabled) return;
+
+        const event = eventData as unknown as Record<string, unknown>;
+        const channelID = String(
+            event.broadcaster_user_id ||
+            event.to_broadcaster_user_id ||
+            STREAMER.id
+        );
+
+        if (!channelID || !eventsubData?.message) return;
+
+        await sendTwitchChatMessage(channelID, eventsubData.message, null, {
+            channelID,
+            eventData,
+            eventsubData
+        });
+    };
+
     switch(type) {
         case 'channel.chat.message':
             messageHandler(STREAMER.id, eventData as IChatMessage);
@@ -79,11 +99,12 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
             await raidHandler(eventData as IRaidEventData, eventsubData);
             break;
         case 'channel.bit.use':
+        case 'channel.bits.use':
         case 'channel.cheer':
             await cheerHandler(eventData as IBitUseEvent, eventsubData, chatEnabled);
             break;
         case 'channel.channel_points_custom_reward_redemption.add':
-            redemptionHandler(eventData as IRedemptionEvent, chatEnabled);
+            await redemptionHandler(eventData as IRedemptionEvent, chatEnabled);
             break;
         case 'channel.follow':
             followHandler(eventData as IFollowEvent, eventsubData, chatEnabled);
@@ -99,6 +120,20 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
             break;
         case 'channel.ban':
             banHandler(eventData as IBanEvent, eventsubData, chatEnabled);
+            break;
+        case 'channel.subscribe':
+        case 'channel.subscription.gift':
+        case 'channel.subscription.message':
+        case 'channel.shoutout.receive':
+        case 'channel.hype_train.begin':
+        case 'channel.hype_train.progress':
+        case 'channel.hype_train.end':
+        case 'channel.poll.progress':
+        case 'channel.prediction.progress':
+        case 'channel.update':
+        case 'user.update':
+        case 'automod.message.hold':
+            await handleMessageOnlyEvent();
             break;
     }
 }

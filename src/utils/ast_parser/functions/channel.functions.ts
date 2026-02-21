@@ -1,20 +1,41 @@
-import type { ExecutionContext } from '../types.js';
 import { registerFunction, type FunctionHandler } from '../evaluator.js';
 import * as ChannelFunctions from '../../../functions/channels/index.js';
 import * as ChatFunctions from '../../../functions/chats/index.js';
+import * as UserFunctions from '../../../functions/users/index.js';
+import { searchCategories } from '../../../functions/search/index.js';
+import { createPrediction } from '../../../functions/predictions/index.js';
+import { createPoll } from '../../../functions/polls/index.js';
 import TwitchStreamers from '../../../classes/twitch_streamers.class.js';
 
+function parseRawArgument(args: unknown[], fallback?: string): string {
+    if (args.length > 0) {
+        return args.map(arg => String(arg)).join(' ').trim();
+    }
+    return String(fallback || '').trim();
+}
+
 const raidHandler: FunctionHandler = async (args, ctx) => {
-    const raidTarget = String(args[0] || ctx.argument || '');
+    const raidTarget = (parseRawArgument(args, ctx.argument).split(/\s+/)[0] || '').replace(/^@/, '').toLowerCase();
     if (!raidTarget) return '';
-    
-    const raidUserData = await TwitchStreamers.getTwitchAccountById(raidTarget);
-    if (!raidUserData) {
+
+    const raidUserResult = await UserFunctions.getTwitchUserByLogin(raidTarget);
+    let targetUserId = raidUserResult.data?.id || '';
+
+    if (!targetUserId) {
+        const raidUserData = await TwitchStreamers.getTwitchAccountById(raidTarget);
+        if (raidUserData?.id) {
+            targetUserId = raidUserData.id;
+        }
+    }
+
+    if (!targetUserId) {
         return 'User not found';
     }
-    
-    const result = await ChannelFunctions.raid(ctx.broadcasterId, raidUserData.id || '');
-    return result.error ? (result.message || 'Error raiding channel') : '';
+
+    const result = await ChannelFunctions.raid(ctx.broadcasterId, targetUserId);
+    return result.error || (result.status && result.status >= 400)
+        ? (result.message || 'Error raiding channel')
+        : '';
 };
 
 const unraidHandler: FunctionHandler = async (_args, ctx) => {
@@ -27,11 +48,11 @@ const unraidHandler: FunctionHandler = async (_args, ctx) => {
 };
 
 const setTitleHandler: FunctionHandler = async (args, ctx) => {
-    const newTitle = args[0] || '';
+    const newTitle = parseRawArgument(args, ctx.argument);
     if (!newTitle) {
         return 'Usage: $(set.title new title)';
     }
-    const result = await ChannelFunctions.setChannelInformation(ctx.broadcasterId, { title: String(newTitle) });
+    const result = await ChannelFunctions.setChannelInformation(ctx.broadcasterId, { title: newTitle });
     if (result.error) {
         return `Error setting title: ${result.message}`;
     }
@@ -39,16 +60,72 @@ const setTitleHandler: FunctionHandler = async (args, ctx) => {
     return '';
 };
 
-const setGameHandler: FunctionHandler = async (_args, _ctx) => {
-    return '⚠️ This feature is being implemented';
+const setGameHandler: FunctionHandler = async (args, ctx) => {
+    const gameQuery = parseRawArgument(args, ctx.argument);
+    if (!gameQuery) {
+        return 'Usage: $(set.game game name)';
+    }
+
+    const gameSearchResult = await searchCategories(gameQuery);
+    if (gameSearchResult.error || !gameSearchResult.data || gameSearchResult.data.length === 0) {
+        return `Error finding game: ${gameSearchResult.message || 'Game not found'}`;
+    }
+
+    const selectedGame = gameSearchResult.data.find(
+        game => game.name.toLowerCase() === gameQuery.toLowerCase()
+    ) || gameSearchResult.data[0];
+
+    const result = await ChannelFunctions.setChannelInformation(ctx.broadcasterId, { game_id: selectedGame.id });
+    if (result.error) {
+        return `Error setting game: ${result.message}`;
+    }
+
+    await ChatFunctions.sendTwitchChatMessage(ctx.broadcasterId, `Game updated to: ${selectedGame.name}`);
+    return '';
 };
 
-const startPredictionHandler: FunctionHandler = async (_args, _ctx) => {
-    return '⚠️ This feature is being implemented';
+const startPredictionHandler: FunctionHandler = async (args, ctx) => {
+    const rawInput = parseRawArgument(args, ctx.argument);
+    if (!rawInput) {
+        return 'Usage: $(start.prediction title;option1/option2;seconds)';
+    }
+
+    const [title = '', optionsRaw = '', durationRaw = ''] = rawInput.split(';').map(part => part.trim());
+    const options = optionsRaw
+        .split('/')
+        .map(option => option.trim())
+        .filter(Boolean)
+        .map(option => ({ title: option }));
+    const duration = Number(durationRaw);
+
+    if (!title || options.length < 2 || isNaN(duration) || duration <= 0) {
+        return 'Invalid prediction format. Use: title;option1/option2;seconds';
+    }
+
+    const result = await createPrediction(ctx.broadcasterId, title, options, duration);
+    return result.error ? `Error starting prediction: ${result.message}` : '';
 };
 
-const startPollHandler: FunctionHandler = async (_args, _ctx) => {
-    return '⚠️ This feature is being implemented';
+const startPollHandler: FunctionHandler = async (args, ctx) => {
+    const rawInput = parseRawArgument(args, ctx.argument);
+    if (!rawInput) {
+        return 'Usage: $(start.poll title;option1/option2;seconds)';
+    }
+
+    const [title = '', optionsRaw = '', durationRaw = ''] = rawInput.split(';').map(part => part.trim());
+    const options = optionsRaw
+        .split('/')
+        .map(option => option.trim())
+        .filter(Boolean)
+        .map(option => ({ title: option }));
+    const duration = Number(durationRaw);
+
+    if (!title || options.length < 2 || isNaN(duration) || duration <= 0) {
+        return 'Invalid poll format. Use: title;option1/option2;seconds';
+    }
+
+    const result = await createPoll(ctx.broadcasterId, title, options, duration);
+    return result.error ? `Error starting poll: ${result.message}` : '';
 };
 
 const adHandler: FunctionHandler = async (_args, ctx) => {

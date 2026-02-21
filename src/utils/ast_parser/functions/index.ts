@@ -6,11 +6,14 @@ import { registerCountFunctions } from './count.functions.js';
 import { registerChannelFunctions } from './channel.functions.js';
 import { registerClipFunctions } from './clip.functions.js';
 import { registerFollowageFunctions } from './followage.functions.js';
+import { registerEventsubFunctions } from './eventsub.functions.js';
+import { registerTriggerFunctions } from './trigger.functions.js';
 
 let registered = false;
 
 export function registerAllFunctions(): void {
     if (registered) return;
+    registered = true;
     
     registerUserFunctions();
     registerRandomFunctions();
@@ -20,8 +23,8 @@ export function registerAllFunctions(): void {
     registerChannelFunctions();
     registerClipFunctions();
     registerFollowageFunctions();
-    
-    registered = true;
+    registerEventsubFunctions();
+    registerTriggerFunctions();
 }
 
 export { registerFunction, getFunctionHandler, type FunctionHandler } from '../evaluator.js';

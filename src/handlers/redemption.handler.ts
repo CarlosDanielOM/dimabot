@@ -12,10 +12,57 @@ import type { ITriggerFile } from "../schemas/trigger_file.schema.js";
 import type { IRedemptionReward as IRedemptionRewardSchema } from "../schemas/redemption_reward.schema.js";
 import { getApiUrl } from "../utils/dev.js";
 import { error as logError, info as logInfo } from "../utils/logger.js";
+import { parseSpecialCommands } from "./special_parser.handler.js";
 
 interface RedemptionHandlerResponse {
     error: boolean;
     message: string;
+}
+
+async function runRedemptionSpecialFunctions(
+    rawMessage: string | undefined,
+    channelID: string,
+    eventData: IRedemptionEvent,
+    rewardTitle: string
+): Promise<string> {
+    if (!rawMessage || rawMessage.trim() === '') {
+        return '';
+    }
+
+    try {
+        const parsed = await parseSpecialCommands(rawMessage, {
+            channelID,
+            eventData,
+            variables: {
+                user: eventData.user_name,
+                userLogin: eventData.user_login,
+                reward: rewardTitle
+            },
+            userLevel: 10
+        });
+
+        return parsed.parsedText;
+    } catch (err) {
+        console.error('Error running redemption special functions:', {
+            channelID,
+            rewardTitle,
+            rawMessage,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+
+        await logError({
+            function: 'redemptionHandler.runRedemptionSpecialFunctions',
+            channelID,
+            rewardTitle,
+            rawMessage,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { channelId: channelID, destination: 'both' });
+
+        return rawMessage;
+    }
 }
 
 export async function redemptionHandler(
@@ -68,16 +115,20 @@ export async function redemptionHandler(
             }
 
             if (chatEnabled && vipResult.rewardMessage) {
-                const context: SendMessageContext = {
-                    channelID: broadcaster_user_id,
-                    eventData: eventData,
-                    variables: {
-                        user: user_name,
-                        userLogin: user_login,
-                        reward: reward.title
-                    }
-                };
-                await sendTwitchChatMessage(broadcaster_user_id, vipResult.rewardMessage, null, context);
+                const parsedRewardMessage = await runRedemptionSpecialFunctions(
+                    vipResult.rewardMessage,
+                    broadcaster_user_id,
+                    eventData,
+                    reward.title
+                );
+                await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+            } else if (vipResult.rewardMessage) {
+                await runRedemptionSpecialFunctions(
+                    vipResult.rewardMessage,
+                    broadcaster_user_id,
+                    eventData,
+                    reward.title
+                );
             }
 
             return {
@@ -128,16 +179,20 @@ export async function redemptionHandler(
             }
 
             if (chatEnabled && customResult.rewardMessage) {
-                const context: SendMessageContext = {
-                    channelID: broadcaster_user_id,
-                    eventData: eventData,
-                    variables: {
-                        user: user_name,
-                        userLogin: user_login,
-                        reward: reward.title
-                    }
-                };
-                await sendTwitchChatMessage(broadcaster_user_id, customResult.rewardMessage, null, context);
+                const parsedRewardMessage = await runRedemptionSpecialFunctions(
+                    customResult.rewardMessage,
+                    broadcaster_user_id,
+                    eventData,
+                    reward.title
+                );
+                await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+            } else if (customResult.rewardMessage) {
+                await runRedemptionSpecialFunctions(
+                    customResult.rewardMessage,
+                    broadcaster_user_id,
+                    eventData,
+                    reward.title
+                );
             }
 
             return {
@@ -175,6 +230,13 @@ export async function redemptionHandler(
             mediaType: file.fileType,
             volume: trigger.volume
         };
+
+        const parsedRewardMessage = await runRedemptionSpecialFunctions(
+            rewardData.message,
+            broadcaster_user_id,
+            eventData,
+            reward.title
+        );
 
         if (customReward && customReward.costChange > 0) {
             const newCost = customReward.cost + customReward.costChange;
@@ -240,8 +302,13 @@ export async function redemptionHandler(
             user: user_name,
             reward: reward.title,
             trigger: trigger.name,
-            delay
+            delay,
+            parsedRewardMessage
         }, { channelId: broadcaster_user_id, destination: 'both' });
+
+        if (chatEnabled && parsedRewardMessage) {
+            await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+        }
 
         return {
             error: false,

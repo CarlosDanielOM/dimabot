@@ -27,12 +27,13 @@ export interface IUsers {
     polar_sh_customer_id: string;
     plan_tier: 'free' | 'premium' | 'pro';
     plan_tier_until: Date | null;
+    last_app_activity_at: Date | null;
     refreshed_at: Date;
     created_at: Date;
     updated_at: Date;
     referrerId?: Types.ObjectId;
     referralCodeUsed?: string;
-    tokenBalance?: number;
+    token_balance?: number;
 }
 
 const accountsSchema = new Schema<IAccounts>({
@@ -61,10 +62,11 @@ const usersSchema = new Schema<IUsers>({
     polar_sh_customer_id: { type: String, default: null },
     plan_tier: { type: String, default: 'free', enum: ['free', 'premium', 'pro'] },
     plan_tier_until: { type: Date, default: null },
+    last_app_activity_at: { type: Date, default: null },
     refreshed_at: { type: Date, default: Date.now },
     referrerId: { type: Schema.Types.ObjectId, ref: 'users', default: null },
     referralCodeUsed: { type: String, default: null },
-    tokenBalance: { type: Number, default: 0 },
+    token_balance: { type: Number, default: 0 },
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }})
 
 const UsersSchema = model('users', usersSchema);

@@ -8,6 +8,7 @@ import { getUrl } from '../../utils/dev.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { getIO } from '../../server/websocket.js';
 import { error } from '../../utils/logger.js';
+import { cleanupRewardArtifacts, createRewardWithEventsub } from '../services/reward_creation.service.js';
 
 interface MulterRequest extends Request {
     file?: Express.Multer.File;
@@ -64,8 +65,8 @@ router.post('/:channelID', authMiddleware as any, async (req: Request, res: Resp
     try {
         const { channelID } = req.params;
         const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
-        const { name, file, type, mediaType, cost, prompt, fileID, cooldown, volume } = req.body;
-        let body = req.body;
+        const { name, file, type, mediaType, cost, prompt, cooldown, volume, createRedemption } = req.body;
+        const body = { ...req.body };
 
         const streamer = await TwitchStreamers.getTwitchAccountById(channelIdStr);
         if (!streamer) {
@@ -85,46 +86,77 @@ router.post('/:channelID', authMiddleware as any, async (req: Request, res: Resp
             });
         }
 
-        body.title = name;
+        const shouldCreateRedemption = createRedemption !== false;
+
+        if (typeof name === 'string' && name.trim().length > 0) {
+            body.title = name;
+        }
         delete body.name;
         if (!body.rewardType) {
             body.rewardType = 'trigger';
         }
 
-        const streamerToken = streamer.access_token;
+        let rewardData: any = null;
 
-        const response = await fetch(`${getUrl()}/rewards/${channelIdStr}`, {
-            method: 'POST',
-            headers: {
-                'Authorization': streamerToken,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(body)
-        });
+        if (shouldCreateRedemption) {
+            const correlationId = `trigger-route-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+            const result = await createRewardWithEventsub({
+                channelID: channelIdStr,
+                body,
+                correlationId
+            });
 
-        const result = await response.json();
-        if (result.error) {
-            await error({
-                error: 'Bad Request',
-                message: 'Error creating trigger',
-                status: 400,
-                response: result
-            }, { channelId: channelIdStr, destination: 'both' });
-            return res.status(result.status).json(result);
+            if (result.error || !result.data) {
+                await error({
+                    error: 'Bad Request',
+                    message: 'Error creating trigger',
+                    status: result.status,
+                    response: result
+                }, { channelId: channelIdStr, destination: 'both' });
+                return res.status(result.status).json({
+                    error: true,
+                    message: result.message,
+                    status: result.status
+                });
+            }
+
+            rewardData = result.data;
+
+            if (!rewardData.rewardID || !rewardData.eventsubID) {
+                if (rewardData.rewardID) {
+                    await cleanupRewardArtifacts(channelIdStr, rewardData.rewardID, rewardData.eventsubID, correlationId);
+                }
+
+                await error({
+                    error: 'Internal Server Error',
+                    message: 'Reward created with invalid state',
+                    status: 500,
+                    rewardData: {
+                        rewardID: rewardData.rewardID,
+                        eventsubID: rewardData.eventsubID
+                    }
+                }, { channelId: channelIdStr, destination: 'both' });
+
+                return res.status(500).json({
+                    error: true,
+                    message: 'Failed to create trigger reward state',
+                    status: 500
+                });
+            }
         }
-
-        const rewardData = result.data;
 
         const newTrigger = new TriggerSchema({
             name: name,
             channel: streamer.name,
             channelID: channelIdStr,
-            rewardID: rewardData.rewardID,
+            rewardID: rewardData?.rewardID || '',
             file,
             type,
             mediaType,
+            isEnabled: typeof rewardData?.isEnabled === 'boolean' ? rewardData.isEnabled : true,
             cost,
             cooldown,
+            prompt: prompt ?? '',
             volume,
             fileID: fileData._id
         });
@@ -132,6 +164,10 @@ router.post('/:channelID', authMiddleware as any, async (req: Request, res: Resp
         try {
             await newTrigger.save();
         } catch (saveError) {
+            if (shouldCreateRedemption && rewardData?.rewardID) {
+                await cleanupRewardArtifacts(channelIdStr, rewardData.rewardID, rewardData.eventsubID, `trigger-route-cleanup-${Date.now()}`);
+            }
+
             await error({
                 error: 'Internal Server Error',
                 message: 'Error saving trigger',
@@ -171,8 +207,8 @@ router.patch('/:channelID/:triggerID', authMiddleware as any, async (req: Reques
         const { channelID, triggerID } = req.params;
         const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
         const triggerIdStr = Array.isArray(triggerID) ? triggerID[0] : triggerID;
-        const { name, file, type, mediaType, cost, prompt, fileID, cooldown, volume } = req.body;
-        let body = req.body;
+        const { name, prompt, cost, cooldown, volume, isEnabled } = req.body;
+        const body = { ...req.body };
 
         const trigger = await TriggerSchema.findOne({ channelID: channelIdStr, _id: triggerIdStr });
         if (!trigger) {
@@ -183,9 +219,14 @@ router.patch('/:channelID/:triggerID', authMiddleware as any, async (req: Reques
             });
         }
 
-        body.title = name;
+        if (typeof name === 'string' && name.trim().length > 0) {
+            body.title = name;
+        }
         delete body.name;
-        body.prompt = prompt ?? '';
+
+        if (prompt === undefined) {
+            delete body.prompt;
+        }
 
         const streamerHeader = await TwitchStreamers.getTwitchAccountById(channelIdStr);
         if (!streamerHeader) {
@@ -219,11 +260,27 @@ router.patch('/:channelID/:triggerID', authMiddleware as any, async (req: Reques
         const rewardData = result.data;
 
         try {
-            const updateResult = await TriggerSchema.findByIdAndUpdate(
-                triggerIdStr,
-                { name, cost, prompt, cooldown, volume },
-                { new: true }
-            );
+            const updateDoc: Partial<ITrigger> = {};
+            if (typeof name === 'string' && name.trim().length > 0) {
+                updateDoc.name = name;
+            }
+            if (typeof cost === 'number') {
+                updateDoc.cost = cost;
+            }
+            if (typeof prompt === 'string') {
+                updateDoc.prompt = prompt;
+            }
+            if (typeof cooldown === 'number') {
+                updateDoc.cooldown = cooldown;
+            }
+            if (typeof volume === 'number') {
+                updateDoc.volume = volume;
+            }
+            if (typeof isEnabled === 'boolean') {
+                updateDoc.isEnabled = isEnabled;
+            }
+
+            const updateResult = await TriggerSchema.findByIdAndUpdate(triggerIdStr, updateDoc, { new: true });
 
             return res.status(200).json({
                 data: updateResult,
@@ -275,32 +332,34 @@ router.delete('/:channelID/:triggerID', authMiddleware as any, async (req: Reque
             });
         }
 
-        const streamerHeader = await TwitchStreamers.getTwitchAccountById(channelIdStr);
-        if (!streamerHeader) {
-            return res.status(404).json({
-                error: 'Not Found',
-                message: 'Streamer not found',
-                status: 404
-            });
-        }
-
-        const response = await fetch(`${getUrl()}/rewards/${channelIdStr}/${trigger.rewardID}`, {
-            method: 'DELETE',
-            headers: {
-                'Authorization': streamerHeader.access_token,
-                'Content-Type': 'application/json'
+        if (trigger.rewardID && trigger.rewardID.trim() !== '') {
+            const streamerHeader = await TwitchStreamers.getTwitchAccountById(channelIdStr);
+            if (!streamerHeader) {
+                return res.status(404).json({
+                    error: 'Not Found',
+                    message: 'Streamer not found',
+                    status: 404
+                });
             }
-        });
 
-        const result = await response.json();
-        if (result.error) {
-            await error({
-                error: 'Bad Request',
-                message: 'Error deleting trigger',
-                status: 400,
-                response: result
-            }, { channelId: channelIdStr, destination: 'both' });
-            return res.status(400).json(result);
+            const response = await fetch(`${getUrl()}/rewards/${channelIdStr}/${trigger.rewardID}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': streamerHeader.access_token,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const result = await response.json();
+            if (result.error) {
+                await error({
+                    error: 'Bad Request',
+                    message: 'Error deleting trigger',
+                    status: 400,
+                    response: result
+                }, { channelId: channelIdStr, destination: 'both' });
+                return res.status(400).json(result);
+            }
         }
 
         try {
@@ -357,6 +416,27 @@ router.post('/:channelID/send', authMiddleware as any, async (req: Request, res:
 
         const namespacePath = `/overlays/triggers/${channelIdStr}`;
         const namespace = io.of(namespacePath);
+        const sockets = await namespace.fetchSockets();
+
+        if (sockets.length === 0) {
+            await error({
+                error: 'No Connected Trigger Clients',
+                message: 'No trigger overlay clients connected',
+                status: 409,
+                channelID: channelIdStr,
+                namespacePath
+            }, { channelId: channelIdStr, destination: 'both' });
+
+            return res.status(409).json({
+                error: true,
+                message: 'No trigger overlay clients connected',
+                status: 409,
+                data: {
+                    activeConnections: 0,
+                    namespace: namespacePath
+                }
+            });
+        }
 
         try {
             namespace.emit('trigger', body);
@@ -377,7 +457,11 @@ router.post('/:channelID/send', authMiddleware as any, async (req: Request, res:
         return res.status(200).json({
             error: false,
             message: 'Trigger sent',
-            status: 200
+            status: 200,
+            data: {
+                activeConnections: sockets.length,
+                namespace: namespacePath
+            }
         });
     } catch (err) {
         await error({
@@ -434,7 +518,8 @@ router.post('/:channelID/upload', authMiddleware as any, async (req: MulterReque
         if (acceptableMimeTypes.includes(file.mimetype)) {
             const exists = await TriggerFileSchema.exists({
                 name: req.body.triggerName,
-                fileType: file.mimetype
+                fileType: file.mimetype,
+                channelID: channelIdStr
             });
             if (exists) {
                 await error({

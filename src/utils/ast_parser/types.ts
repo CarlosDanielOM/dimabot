@@ -1,4 +1,25 @@
-export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom';
+export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template';
+
+export type TemplateSegment = { type: 'text'; value: string } | { type: 'expr'; node: AstNode };
+
+export type ArithmeticOperator = '+' | '-' | '*' | '/' | '%';
+export type ComparisonOperator = '==' | '!=' | '>=' | '<=' | '>' | '<' | '=' | '~=' | '<>';
+export type UnaryOperator = '+' | '-';
+export type BinaryOperator = ArithmeticOperator | ComparisonOperator;
+
+export type VariableStorage = 'memory' | 'cache' | 'cacheUser' | 'db' | 'dbUser';
+
+export interface ParsedVarName {
+    name: string;
+    storage: VariableStorage;
+}
+
+export type ArrayAccessor = 
+    | { type: 'index'; index: AstNode }
+    | { type: 'random' }
+    | { type: 'length' }
+    | { type: 'append' }
+    | { type: 'setIndex'; index: AstNode };
 
 export interface BaseNode {
     type: NodeType;
@@ -12,12 +33,23 @@ export interface RootNode extends BaseNode {
 export interface SetVarNode extends BaseNode {
     type: 'setVar';
     name: string;
+    storage: VariableStorage;
     value: AstNode;
+    accessor?: ArrayAccessor;
 }
 
 export interface GetVarNode extends BaseNode {
     type: 'getVar';
     name: string;
+    storage: VariableStorage;
+    accessor?: ArrayAccessor;
+}
+
+export interface ExistsNode extends BaseNode {
+    type: 'exists';
+    name: string;
+    storage: VariableStorage;
+    accessor?: ArrayAccessor;
 }
 
 export interface FunctionNode extends BaseNode {
@@ -28,11 +60,37 @@ export interface FunctionNode extends BaseNode {
 
 export interface ConditionalNode extends BaseNode {
     type: 'conditional';
-    left: AstNode;
-    operator: string;
-    right: AstNode;
+    condition?: AstNode;
+    left?: AstNode;
+    operator?: string;
+    right?: AstNode;
     trueBranch: AstNode;
     falseBranch: AstNode;
+}
+
+export interface BinaryExpressionNode extends BaseNode {
+    type: 'binary';
+    operator: BinaryOperator;
+    left: AstNode;
+    right: AstNode;
+}
+
+export interface UnaryExpressionNode extends BaseNode {
+    type: 'unary';
+    operator: UnaryOperator;
+    argument: AstNode;
+}
+
+export interface TernaryExpressionNode extends BaseNode {
+    type: 'ternary';
+    test: AstNode;
+    consequent: AstNode;
+    alternate: AstNode;
+}
+
+export interface TemplateNode extends BaseNode {
+    type: 'template';
+    segments: TemplateSegment[];
 }
 
 export interface LiteralNode extends BaseNode {
@@ -46,7 +104,7 @@ export interface CustomNode<T = unknown> extends BaseNode {
     data: T;
 }
 
-export type AstNode = RootNode | SetVarNode | GetVarNode | FunctionNode | ConditionalNode | LiteralNode | CustomNode;
+export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | CustomNode;
 
 export interface IStreamerData {
     id?: string;
@@ -56,6 +114,7 @@ export interface IStreamerData {
 
 export interface ExecutionContext {
     variables: Map<string, unknown>;
+    arrays: Map<string, string[]>;
     broadcasterId: string;
     userId: string;
     userLogin: string;
@@ -68,6 +127,16 @@ export interface ExecutionContext {
     eventsubData?: Record<string, unknown>;
     extraContext?: Record<string, unknown>;
     streamer?: IStreamerData | null;
+    platform: string;
+    commandName: string;
+    commandId: string;
+    commandResponses: string[];
+    commandVariables: Map<string, string>;
+    userCommandVariables: Map<string, string>;
+    saveResponses: () => Promise<void>;
+    saveChannelVariable: (name: string, value: string) => Promise<void>;
+    saveUserVariable: (name: string, value: string) => Promise<void>;
+    loadUserVariable: (name: string) => Promise<string>;
 }
 
 export interface ParseResult {

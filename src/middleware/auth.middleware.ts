@@ -9,11 +9,49 @@ import type {
     TwitchUsersResponse
 } from './types.js';
 import { error } from '../utils/logger.js';
+import UsersSchema from '../schemas/users.schema.js';
 
 const CACHE_KEY_PREFIX = 'token:';
 const CACHE_TTL = 14000;
 const TWITCH_VALIDATE_URL = 'https://id.twitch.tv/oauth2/validate';
 const TWITCH_USERS_URL = 'https://api.twitch.tv/helix/users';
+const ACTIVITY_TOUCH_TTL = 60 * 60 * 24;
+
+async function touchLastAppActivity(twitchUserId: string): Promise<void> {
+    if (!twitchUserId) return;
+
+    try {
+        const cache = await getDragonflyClient('AuthMiddleware activity');
+        const cacheKey = `twitch:${twitchUserId}:last_app_activity_touch`;
+        const isRecentlyTouched = await cache.exists(cacheKey);
+
+        if (isRecentlyTouched === 1) {
+            return;
+        }
+
+        await UsersSchema.updateOne(
+            {
+                'accounts.id': twitchUserId,
+                'accounts.type': 'twitch'
+            },
+            {
+                $set: {
+                    last_app_activity_at: new Date()
+                }
+            }
+        );
+
+        await cache.set(cacheKey, '1');
+        await cache.expire(cacheKey, ACTIVITY_TOUCH_TTL);
+    } catch (err) {
+        await error({
+            function: 'touchLastAppActivity',
+            twitchUserId,
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+        }, { destination: 'both' });
+    }
+}
 
 async function validateTwitchToken(token: string): Promise<{ valid: boolean; validation?: TwitchTokenValidation; error?: string }> {
     try {
@@ -142,7 +180,6 @@ async function cacheToken(token: string, user: AuthenticatedUser): Promise<void>
 }
 
 export async function authMiddleware(req: AuthRequest, res: Response, next: NextFunction): Promise<void> {
-    console.log('authMiddleware');
     try {
         const headers = req.headers as unknown as Record<string, string | string[] | undefined>;
         const authHeader = headers['authorization'] || headers['Authorization'];
@@ -176,6 +213,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
         const cachedUser = await getCachedToken(token);
         if (cachedUser) {
             req.user = cachedUser;
+            await touchLastAppActivity(cachedUser.id);
             next();
             return;
         }
@@ -205,6 +243,7 @@ export async function authMiddleware(req: AuthRequest, res: Response, next: Next
         if (userResult.user) {
             await cacheToken(token, userResult.user);
             req.user = userResult.user;
+            await touchLastAppActivity(userResult.user.id);
             next();
         }
     } catch (err) {

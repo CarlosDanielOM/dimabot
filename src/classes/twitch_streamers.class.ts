@@ -82,8 +82,12 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
 
-            let account = await cache.hGetAll(`accounts:twitch:${id}:data`) as unknown as IUsersCache;
-            if(!account) return null;
+            let account = await cache.hGetAll(`accounts:twitch:${id}:data`) as unknown as IUsersCache | null;
+            if (!account || !account.id) {
+                account = await this.hydrateTwitchAccountById(id);
+            }
+
+            if (!account || !account.id) return null;
 
             return account;
         } catch (err) {
@@ -122,16 +126,21 @@ class TwitchStreamers {
             
             await error({ function: 'TwitchStreamers.getAccountTokenById', id, account_type, hasToken: !!token, hasExpiresAt: !!expiresAt, expiresAt: expiresAt || 'not set' }, { channelId: id, destination: 'cache' });
 
-            if (token && expiresAt) {
-                const expiration = parseInt(expiresAt);
-                const now = Math.floor(Date.now() / 1000);
-                
-                if (now < expiration - 300) {
+            const now = Math.floor(Date.now() / 1000);
+            if (token) {
+                const expiration = expiresAt ? Number.parseInt(expiresAt, 10) : NaN;
+
+                if (Number.isFinite(expiration) && now < expiration - 300) {
                     await error({ function: 'TwitchStreamers.getAccountTokenById', id, action: 'returning_cached_token', secondsUntilExpiry: expiration - now }, { channelId: id, destination: 'cache' });
                     return token;
                 }
-                
-                await error({ function: 'TwitchStreamers.getAccountTokenById', id, action: 'token_expired_refreshing', secondsSinceExpiry: now - expiration }, { channelId: id, destination: 'cache' });
+
+                await error({
+                    function: 'TwitchStreamers.getAccountTokenById',
+                    id,
+                    action: 'token_needs_refresh',
+                    reason: Number.isFinite(expiration) ? 'near_or_expired' : 'missing_or_invalid_expires_at'
+                }, { channelId: id, destination: 'cache' });
             }
             
             const refreshToken = await this.getAccountRefreshTokenById(id, account_type);
@@ -166,10 +175,59 @@ class TwitchStreamers {
         try {
             const cache = await this.cachePromise;
             let refresh_token = await cache.hGet(`accounts:${account_type}:${id}:data`, 'refresh_token');
+            if (!refresh_token && account_type === 'twitch') {
+                const hydrated = await this.hydrateTwitchAccountById(id);
+                refresh_token = hydrated?.refresh_token || null;
+            }
             if(!refresh_token) return null;
             return refresh_token;
         } catch (err) {
             await error({ function: 'TwitchStreamers.getAccountRefreshTokenById', id, account_type, error: err instanceof Error ? err.message : String(err) }, { channelId: id, destination: 'both' });
+            return null;
+        }
+    }
+
+    private async hydrateTwitchAccountById(id: string): Promise<IUsersCache | null> {
+        try {
+            const cache = await this.cachePromise;
+            const user = await UsersSchema.findOne({
+                'accounts.id': id,
+                'accounts.type': 'twitch'
+            })
+                .select('accounts plan_tier plan_tier_until polar_sh_customer_id')
+                .lean<IUsers | null>();
+
+            if (!user) {
+                return null;
+            }
+
+            const twitchAccount = user.accounts.find((account) => account.type === 'twitch' && account.id === id);
+            if (!twitchAccount) {
+                return null;
+            }
+
+            const accountCache: IUsersCache = {
+                id: twitchAccount.id,
+                name: twitchAccount.name ?? '',
+                email: twitchAccount.email ?? '',
+                plan_tier: user.plan_tier ?? 'free',
+                plan_tier_until: user.plan_tier_until ? new Date(user.plan_tier_until).toDateString() : '',
+                polar_sh_customer_id: user.polar_sh_customer_id ?? '',
+                refresh_token: decrypt(twitchAccount.refresh_token) ?? '',
+                access_token: decrypt(twitchAccount.access_token) ?? '',
+                actived: twitchAccount.actived ? 'true' : 'false',
+                chat_enabled: twitchAccount.chat_enabled ? 'true' : 'false',
+                has_permissions: twitchAccount.has_permissions ? 'true' : 'false',
+                up_to_date_permissions: twitchAccount.up_to_date_permissions ? 'true' : 'false'
+            };
+
+            await cache.hSet(`accounts:twitch:${id}:data`, accountCache as Record<string, any>);
+            await cache.sAdd('streamers:by:id', id);
+            await cache.del('twitch:accounts');
+
+            return accountCache;
+        } catch (err) {
+            await error({ function: 'TwitchStreamers.hydrateTwitchAccountById', id, error: err instanceof Error ? err.message : String(err) }, { destination: 'both' });
             return null;
         }
     }

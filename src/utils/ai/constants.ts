@@ -24,10 +24,11 @@ export const CODING_MODELS = {
  export const DEFAULT_TIMEOUT_MS = 8000;
 
  export const EMBEDDING_MODELS = {
-    default: 'baai/bge-m3',
-    multilingual: 'baai/bge-m3'
+    default: 'qwen/qwen3-embedding-8b',
+    multilingual: 'qwen/qwen3-embedding-8b'
  } as const;
 
- export const EMBEDDING_DIMENSIONS = {
-    'baai/bge-m3': 1024
- } as const;
+ export const EMBEDDING_DIMENSIONS: Record<string, number> = {
+    'baai/bge-m3': 1024,
+    'qwen/qwen3-embedding-8b': 1024
+ };

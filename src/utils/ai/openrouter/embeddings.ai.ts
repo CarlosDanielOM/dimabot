@@ -1,10 +1,12 @@
 import { error, debug } from '../../logger.js';
+import { EMBEDDING_DIMENSIONS } from '../constants.js';
 
 const EMBEDDING_API_URL = 'https://openrouter.ai/api/v1/embeddings';
 
 export interface IOpenRouterEmbeddingRequest {
     model: string;
     input: string | string[];
+    dimensions?: number;
 }
 
 export interface IOpenRouterEmbeddingResponse {
@@ -71,7 +73,7 @@ export function detectLanguage(text: string, threshold: number = 0.1): string {
     return bestLanguage;
 }
 
-export async function generateEmbedding(text: string, model: string = 'baai/bge-m3'): Promise<IEmbeddingResult> {
+export async function generateEmbedding(text: string, model: string = 'qwen/qwen3-embedding-8b'): Promise<IEmbeddingResult> {
     try {
         const startTime = Date.now();
 
@@ -82,9 +84,12 @@ export async function generateEmbedding(text: string, model: string = 'baai/bge-
             'X-Title': 'DomDimaBot'
         };
 
+        const dimensions = EMBEDDING_DIMENSIONS[model];
+
         const requestBody: IOpenRouterEmbeddingRequest = {
             model,
-            input: text
+            input: text,
+            ...(dimensions && { dimensions })
         };
 
         const response = await fetch(EMBEDDING_API_URL, {
@@ -135,7 +140,7 @@ export async function generateEmbedding(text: string, model: string = 'baai/bge-
             model,
             tokens: responseData.usage?.total_tokens,
             duration
-        });
+        }, { destination: 'cache' });
 
         return {
             error: false,
@@ -157,7 +162,7 @@ export async function generateEmbedding(text: string, model: string = 'baai/bge-
     }
 }
 
-export async function generateEmbeddings(texts: string[], model: string = 'baai/bge-m3'): Promise<IBatchEmbeddingResult> {
+export async function generateEmbeddings(texts: string[], model: string = 'qwen/qwen3-embedding-8b'): Promise<IBatchEmbeddingResult> {
     try {
         if (texts.length === 0) {
             return {
@@ -188,9 +193,12 @@ export async function generateEmbeddings(texts: string[], model: string = 'baai/
             'X-Title': 'DomDimaBot'
         };
 
+        const dimensions = EMBEDDING_DIMENSIONS[model];
+
         const requestBody: IOpenRouterEmbeddingRequest = {
             model,
-            input: texts
+            input: texts,
+            ...(dimensions && { dimensions })
         };
 
         const response = await fetch(EMBEDDING_API_URL, {

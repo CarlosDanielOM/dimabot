@@ -10,12 +10,39 @@ import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
 import { getDirname } from "../utils/pollyfills.js";
 import { getSiteAnalytics } from "../utils/siteanalytics.js";
 import { pubSubManager } from "../classes/pubsub_manager.class.js";
+import { getTwitchAppHeader } from "../utils/header.js";
+import { getTwitchHelixUrl } from "../utils/links.js";
 
 const __dirname = getDirname(import.meta.url);
 
 let io: SocketIOServer | null = null;
 let cacheClient: Awaited<ReturnType<typeof getDragonflyClient>> | null = null;
 const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
+
+async function getChannelLiveStatus(channelID: string): Promise<boolean> {
+    try {
+        const appHeader = await getTwitchAppHeader();
+        const params = new URLSearchParams({ user_id: channelID });
+
+        const response = await fetch(getTwitchHelixUrl('streams', params.toString()), {
+            headers: {
+                'Client-Id': appHeader['Client-Id'],
+                'Authorization': appHeader.Authorization,
+                'Content-Type': appHeader['Content-Type']
+            }
+        });
+
+        if (!response.ok) {
+            return false;
+        }
+
+        const data = await response.json();
+        return Array.isArray(data.data) && data.data.length > 0;
+    } catch (error) {
+        console.error(`Error fetching live status for ${channelID}:`, error);
+        return false;
+    }
+}
 
 export const websocket = async (app: any): Promise<HttpServer | null> => {
     try {
@@ -138,9 +165,9 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
             });
         });
 
-        //? Overlay Triggers
-        io.of(/^\/overlays\/triggers\/\w+$/).on('connection', async (socket) => {
-            const channelID = socket.nsp.name.split('/')[3];
+        //? Dashboard Namespace
+        io.of(/^\/dashboard\/\w+$/).on('connection', async (socket) => {
+            const channelID = socket.nsp.name.split('/')[2];
 
             const account = await TwitchStreamers.getTwitchAccountById(channelID);
             if (!account) {
@@ -151,10 +178,85 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                 return;
             }
 
+            console.log(`${account.name} (${channelID}) connected to dashboard`);
+
+            const initialLiveStatus = await getChannelLiveStatus(channelID);
+            socket.emit('dashboard-snapshot', {
+                channelID,
+                connectedAt: new Date().toISOString(),
+                isLive: initialLiveStatus
+            });
+
+            const liveStatusInterval = setInterval(async () => {
+                const isLive = await getChannelLiveStatus(channelID);
+                socket.emit('stream-status', {
+                    channelID,
+                    isLive,
+                    checkedAt: new Date().toISOString()
+                });
+            }, 45000);
+
+            socket.on('dashboard-ping', () => {
+                socket.emit('dashboard-pong', {
+                    channelID,
+                    timestamp: new Date().toISOString()
+                });
+            });
+
+            socket.on('disconnect', () => {
+                clearInterval(liveStatusInterval);
+                console.log(`${account.name} (${channelID}) disconnected from dashboard`);
+            });
+        });
+
+        //? Overlay Triggers
+        io.of(/^\/overlays\/triggers\/\w+$/).on('connection', async (socket) => {
+            const channelID = socket.nsp.name.split('/')[3];
+            const timeoutKey = `triggers:${channelID}`;
+
+            const account = await TwitchStreamers.getTwitchAccountById(channelID);
+            if (!account) {
+                socket.emit('error', {
+                    message: 'Account not found',
+                    status: 404
+                });
+                return;
+            }
+
+            const existingTimeout = disconnectTimeouts.get(timeoutKey);
+            if (existingTimeout) {
+                clearTimeout(existingTimeout);
+                disconnectTimeouts.delete(timeoutKey);
+                console.log(`${channelID} reconnected to triggers, cleared disconnect timeout`);
+            }
+
+            await cacheClient!.set(`twitch:${channelID}:triggers:connected`, 'true');
+            await cacheClient!.set(`twitch:${channelID}:triggers:last_activity`, Date.now());
+
             console.log(`${account.name} (${channelID}) connected to triggers`);
+
+            socket.on('ping', async () => {
+                await cacheClient!.set(`twitch:${channelID}:triggers:last_activity`, Date.now());
+            });
 
             socket.on('disconnect', () => {
                 console.log(`${account.name} (${channelID}) disconnected from triggers`);
+
+                const timeout = setTimeout(async () => {
+                    const namespace = io?.of(`/overlays/triggers/${channelID}`);
+                    if (namespace) {
+                        const sockets = await namespace.fetchSockets();
+                        if (sockets.length === 0) {
+                            await cacheClient!.del(`twitch:${channelID}:triggers:connected`);
+                            console.log(`${channelID} trigger connection removed (10s timeout)`);
+                        } else {
+                            console.log(`${channelID} has ${sockets.length} active trigger socket(s), keeping connection flag`);
+                        }
+                    }
+                    disconnectTimeouts.delete(timeoutKey);
+                }, 10000);
+
+                disconnectTimeouts.set(timeoutKey, timeout);
             });
         });
 
@@ -327,6 +429,20 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                                     // console.log(`${channel.id} (${channel.name}) speech marked as inactive (no connections)`);
                                 }
                             }
+                        }
+                    }
+
+                    // Check trigger connections (heartbeat based, like clips)
+                    const triggerNamespace = io.of(`/overlays/triggers/${channel.id}`);
+                    const triggerSockets = await triggerNamespace.fetchSockets();
+
+                    if (triggerSockets.length === 0) {
+                        const lastActivity = await cacheClient.get(`twitch:${channel.id}:triggers:last_activity`);
+                        const now = Date.now();
+                        const timeSinceActivity = lastActivity ? now - parseInt(lastActivity) : Infinity;
+
+                        if (timeSinceActivity > 60000) {
+                            await cacheClient.del(`twitch:${channel.id}:triggers:connected`);
                         }
                     }
                 }

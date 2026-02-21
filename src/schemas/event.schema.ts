@@ -20,9 +20,9 @@ export interface IEventConfig {
 }
 
 export interface IEventTierLimits {
-    basic: number;
+    free: number;
     premium: number;
-    premium_plus: number;
+    pro: number;
 }
 
 export interface IEventDescription {
@@ -41,8 +41,7 @@ export interface IEvent {
     textColor: string;
     releaseStage: 'stable' | 'beta' | 'alpha' | 'maintenance' | 'coming_soon' | 'unavailable' | 'deprecated';
     enabled: boolean;
-    premium: boolean;
-    premium_plus: boolean;
+    plan_tier: 'free' | 'premium' | 'pro';
     description: IEventDescription;
     config: IEventConfig[];
     tierLimits: IEventTierLimits;
@@ -94,13 +93,10 @@ const eventSchema = new Schema<IEvent>({
         type: Boolean,
         default: false,
     },
-    premium: {
-        type: Boolean,
-        default: false,
-    },
-    premium_plus: {
-        type: Boolean,
-        default: false,
+    plan_tier: {
+        type: String,
+        enum: ['free', 'premium', 'pro'],
+        default: 'free',
     },
     description: {
         EN: {
@@ -169,7 +165,7 @@ const eventSchema = new Schema<IEvent>({
         },
     ],
     tierLimits: {
-        basic: {
+        free: {
             type: Number,
             default: 0,
         },
@@ -177,7 +173,7 @@ const eventSchema = new Schema<IEvent>({
             type: Number,
             default: 2,
         },
-        premium_plus: {
+        pro: {
             type: Number,
             default: 5,
         },

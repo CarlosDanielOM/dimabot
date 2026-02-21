@@ -6,6 +6,7 @@ import { unVIPExpiredUser } from "../functions/redemptions/unvipexpired.redempti
 import { incrementSiteAnalytics } from "../utils/siteanalytics.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import { error as logError, info as logInfo } from "../utils/logger.js";
+import { recordStreamOnlineEvent } from "../utils/stream_analytics.js";
 
 interface StreamOnlineHandlerResponse {
     error: boolean;
@@ -21,6 +22,12 @@ export async function streamOnlineHandler(
         const { broadcaster_user_id, broadcaster_user_login } = eventData;
 
         if (!chatEnabled) {
+            await recordStreamOnlineEvent({
+                channelID: broadcaster_user_id,
+                channel: broadcaster_user_login,
+                streamID: eventData.id,
+                startedAt: eventData.started_at
+            });
             await getChannelEditors(broadcaster_user_id, true);
             await unVIPExpiredUser(eventData);
             await incrementSiteAnalytics('live', 1);
@@ -55,6 +62,13 @@ export async function streamOnlineHandler(
         await getChannelEditors(broadcaster_user_id, true);
 
         await unVIPExpiredUser(eventData);
+
+        await recordStreamOnlineEvent({
+            channelID: broadcaster_user_id,
+            channel: broadcaster_user_login,
+            streamID: eventData.id,
+            startedAt: eventData.started_at
+        });
 
         await incrementSiteAnalytics('live', 1);
 

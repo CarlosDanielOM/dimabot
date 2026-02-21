@@ -1,4 +1,5 @@
 import { generateEmbeddings, detectLanguage } from '../utils/ai/openrouter/embeddings.ai.js';
+import { EMBEDDING_MODELS } from '../utils/ai/constants.js';
 import { getQdrantConnection } from '../utils/databases/qdrant.database.js';
 import { error, debug } from '../utils/logger.js';
 import { createHash } from 'crypto';
@@ -81,7 +82,7 @@ class EmbeddingBatcher {
 
             const result = await generateEmbeddings(
                 messages.map(m => m.text),
-                'baai/bge-m3'
+                EMBEDDING_MODELS.default
             );
 
             if (result.error || !result.embeddings) {

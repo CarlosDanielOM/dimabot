@@ -14,6 +14,8 @@ export interface SendMessageContext {
     argument?: string;
     variables?: Record<string, string>;
     userPlan?: 'free' | 'premium' | 'pro';
+    userLevel?: number;
+    extraContext?: Record<string, unknown>;
 }
 
 export const sendTwitchChatMessage = async (

@@ -73,6 +73,30 @@ const channelHandler: FunctionHandler = async (_args, ctx) => {
     return streamer.name || 'Unknown';
 };
 
+const channelLoginHandler: FunctionHandler = async (_args, ctx) => {
+    const extraContext = ctx.extraContext as Record<string, unknown> | undefined;
+
+    if (extraContext?.broadcasterLogin) {
+        return String(extraContext.broadcasterLogin);
+    }
+
+    const result = await ChannelFunctions.getChannelInformation(ctx.broadcasterId, true);
+    if (!result.error && result.data?.broadcaster_login) {
+        return String(result.data.broadcaster_login);
+    }
+
+    let streamer = ctx.streamer;
+    if (!streamer) {
+        streamer = await TwitchStreamers.getTwitchAccountById(ctx.broadcasterId) as IStreamerData | null;
+    }
+
+    if (streamer?.name) {
+        return String(streamer.name).toLowerCase();
+    }
+
+    return 'unknown';
+};
+
 export function registerTwitchFunctions(): void {
     registerFunction('twitch.subs', subsHandler);
     registerFunction('twitch.title', titleHandler);
@@ -80,4 +104,5 @@ export function registerTwitchFunctions(): void {
     registerFunction('twitch.viewers', viewersHandler);
     registerFunction('twitch.follows', followsHandler);
     registerFunction('twitch.channel', channelHandler);
+    registerFunction('twitch.login', channelLoginHandler);
 }

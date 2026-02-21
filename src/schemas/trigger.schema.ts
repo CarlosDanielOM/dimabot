@@ -10,9 +10,11 @@ export interface ITrigger {
     fileID: Types.ObjectId;
     type: string;
     mediaType: string;
+    isEnabled: boolean;
     volume: number;
     cost: number;
     cooldown: number;
+    prompt: string;
     createdAt: Date;
     date: {
         day: number;
@@ -25,14 +27,16 @@ const triggerSchema = new Schema<ITrigger>({
     name: { type: String, required: true },
     channel: { type: String, required: true },
     channelID: { type: String, required: true },
-    rewardID: { type: String, required: true },
+    rewardID: { type: String, required: false },
     file: { type: String, required: true },
     fileID: { type: Schema.Types.ObjectId, required: true },
     type: { type: String, default: 'redemption' },
     mediaType: { type: String, required: true },
+    isEnabled: { type: Boolean, default: true },
     volume: { type: Number, default: 100 },
     cost: { type: Number, default: 1 },
     cooldown: { type: Number, default: 0 },
+    prompt: { type: String, default: '' },
     createdAt: { type: Date, default: Date.now },
     date: {
         day: { type: Number, default: () => new Date().getDate() },

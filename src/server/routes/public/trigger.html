@@ -22,14 +22,59 @@
         const channelID = window.location.pathname.split('/')[3];
         const triggerContainer = document.getElementById('triggerContainer');
 
-        const socket = io(`/overlays/triggers/${channelID}`, { reconnection: true });
+        const socket = io(`/overlays/triggers/${channelID}`, {
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
+        });
+
+        setInterval(() => {
+            socket.emit('ping', { channelID });
+        }, 1000);
 
         socket.on('connect_error', (error) => {
             console.log('Error:', error);
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'trigger-overlay-error',
+                    message: error?.message || 'Failed to connect to trigger websocket'
+                }, '*');
+            }
         });
 
         socket.on('connect', () => {
             console.log('Connected to triggers');
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'trigger-overlay-connected',
+                    channelID
+                }, '*');
+            }
+        });
+
+        socket.on('disconnect', (reason) => {
+            console.log('Disconnected from triggers:', reason);
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'trigger-overlay-error',
+                    message: `Trigger overlay disconnected: ${reason}`
+                }, '*');
+            }
+        });
+
+        socket.io.on('reconnect_attempt', (attempt) => {
+            console.log('Trigger reconnect attempt:', attempt);
+        });
+
+        socket.io.on('reconnect', (attempt) => {
+            console.log('Trigger reconnected:', attempt);
+            if (window.parent && window.parent !== window) {
+                window.parent.postMessage({
+                    type: 'trigger-overlay-connected',
+                    channelID
+                }, '*');
+            }
         });
 
         socket.on('error', (error) => {

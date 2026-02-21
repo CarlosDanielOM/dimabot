@@ -24,43 +24,49 @@ export async function liveChannels(): Promise<LiveChannelsResponse> {
     try {
         streamerIds = await TwitchStreamers.getTwitchStreamers();
         const botHeader = await getTwitchAppHeader();
-        const params = new URLSearchParams({
-            type: 'live'
-        });
-
-        if (streamerIds.length > 0 && streamerIds.length < 100) {
-            for (let i = 0; i < streamerIds.length; i++) {
-                params.append('user_id', streamerIds[i]);
-            }
-        } else {
+        if (streamerIds.length === 0) {
             return {
-                error: true,
-                message: 'Too many streamers to check',
-                status: 400,
-                type: 'too_many_streamers'
+                error: false,
+                data: []
             };
         }
 
-        const response = await fetch(getTwitchHelixUrl('streams', params.toString()), {
-            headers: {
-                'Client-Id': botHeader['Client-Id'],
-                'Authorization': botHeader.Authorization,
-                'Content-Type': botHeader['Content-Type']
+        const allLiveChannels: any[] = [];
+        for (let i = 0; i < streamerIds.length; i += 100) {
+            const batch = streamerIds.slice(i, i + 100);
+            const params = new URLSearchParams({
+                type: 'live'
+            });
+
+            for (const streamerId of batch) {
+                params.append('user_id', streamerId);
             }
-        });
 
-        const data = await response.json();
+            const response = await fetch(getTwitchHelixUrl('streams', params.toString()), {
+                headers: {
+                    'Client-Id': botHeader['Client-Id'],
+                    'Authorization': botHeader.Authorization,
+                    'Content-Type': botHeader['Content-Type']
+                }
+            });
 
-        if (data.error) {
-            return {
-                error: true,
-                message: data.message
-            };
+            const data = await response.json();
+
+            if (data.error) {
+                return {
+                    error: true,
+                    message: data.message
+                };
+            }
+
+            if (Array.isArray(data.data)) {
+                allLiveChannels.push(...data.data);
+            }
         }
 
         return {
             error: false,
-            data: data.data
+            data: allLiveChannels
         };
     } catch (err) {
         await logError({

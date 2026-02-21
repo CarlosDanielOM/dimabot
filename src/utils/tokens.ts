@@ -156,9 +156,6 @@ export const refreshTwitchToken = async (refresh_token: string, user_id: string)
         const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
         await cache.hSet(`accounts:twitch:${user_id}:data`, 'expires_at', String(expiresAt));
         
-        // Set TTL on the entire hash (expires_in seconds + 5 minute buffer)
-        await cache.expire(`accounts:twitch:${user_id}:data`, expiresIn + 300);
-
         return {
             token,
             refreshToken,
@@ -226,48 +223,14 @@ export const getAppToken = async (platform: 'twitch' | 'youtube' | 'kick' | 'tik
 
 export const getBotToken = async (): Promise<string | null> => {
     try {
-        const cache = await getDragonflyClient('Tokens');
+        const token = await TwitchStreamers.getAccountTokenById(BOT_USER_ID, 'twitch');
         
-        // Check cache first
-        const cachedToken = await cache.hGet('app:twitch:bot', 'access_token');
-        const cachedExpiresAt = await cache.hGet('app:twitch:bot', 'expires_at');
-        
-        // Check if token exists and is not expired
-        if (cachedToken && cachedExpiresAt) {
-            const expiresAt = parseInt(cachedExpiresAt);
-            const now = Math.floor(Date.now() / 1000);
-            
-            // If token is still valid (with 5 min buffer), return it
-            if (now < expiresAt - 300) {
-                return cachedToken;
-            }
+        if (token) {
+            const cache = await getDragonflyClient('Tokens');
+            await cache.hSet('app:twitch:bot', 'access_token', token);
         }
         
-        // Token not in cache or expired, refresh from DB
-        const refreshToken = await TwitchStreamers.getAccountRefreshTokenById(BOT_USER_ID, 'twitch');
-        
-        if (!refreshToken) {
-            await notifyDevelopers('Bot refresh token not found in database', 'error');
-            return null;
-        }
-        
-        const refreshResult = await refreshTwitchToken(refreshToken, BOT_USER_ID);
-        
-        if (!refreshResult.token) {
-            await notifyDevelopers('Failed to refresh bot token', 'error');
-            return null;
-        }
-        
-        // Cache the bot token with expiration
-        const cache2 = await getDragonflyClient('Tokens');
-        const expiresIn = refreshResult.expiresIn || 7200;
-        const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
-        
-        await cache2.hSet('app:twitch:bot', 'access_token', refreshResult.token);
-        await cache2.hSet('app:twitch:bot', 'expires_at', String(expiresAt));
-        await cache2.expire('app:twitch:bot', expiresIn + 300);
-        
-        return refreshResult.token;
+        return token;
     } catch (error) {
         console.error(`Error getting bot token: ${error}`);
         return null;

@@ -1,11 +1,9 @@
 import type { ITwitchEventData } from '../interfaces/twitch/eventsub.interface.js';
 import type { IEventsub } from '../schemas/eventsub.schema.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
-import { parse, evaluate, createExecutionContext } from '../utils/ast_parser/index.js';
+import { createExecutionContext, renderAstWithSourceReference } from '../utils/ast_parser/index.js';
 import { registerAllFunctions } from '../utils/ast_parser/functions/index.js';
 import type { ExecutionContext } from '../utils/ast_parser/types.js';
-
-registerAllFunctions();
 
 export interface ISpecialParserContext {
     channelID: string;
@@ -97,6 +95,8 @@ export async function parseSpecialCommands(
     text: string,
     context: ISpecialParserContext
 ): Promise<ISpecialParserResult> {
+    registerAllFunctions();
+    
     const streamer = await TwitchStreamers.getTwitchAccountById(context.channelID);
     
     const extracted = {
@@ -133,10 +133,12 @@ export async function parseSpecialCommands(
         variables
     });
     
-    const { ast } = parse(text);
-    const { value, context: resultContext } = await evaluate(ast, astContext);
-    
-    const parsedText = unescapeInput(String(value || ''));
+    const { parsedText: renderedText, context: resultContext } = await renderAstWithSourceReference(
+        text,
+        astContext
+    );
+
+    const parsedText = unescapeInput(String(renderedText || ''));
     
     return { 
         parsedText, 

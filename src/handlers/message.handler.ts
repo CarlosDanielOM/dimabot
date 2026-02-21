@@ -316,7 +316,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 }
                 break;
             case 'createClip':
-                const createClipResult = await indexCommands.createClip(channelID);
+                const createClipResult = await indexCommands.createClip(channelID, streamerArgument);
                 if (createClipResult.error) {
                     res = { error: true, message: createClipResult.message || 'Error al crear clip' };
                 } else {
@@ -331,14 +331,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: onlyEmotesResult.message };
                 }
                 break;
-            case 'speach':
-                const speechResult = await indexCommands.speech(channelID, tags, streamerArgument);
-                if (speechResult.error) {
-                    res = { error: true, message: speechResult.message || 'Error al enviar speech' };
-                } else {
-                    res = { error: false, message: speechResult.message };
-                }
-                break;
+
             case 'vanish':
                 const vanishResult = await indexCommands.vanish(channelID, tags, modID);
                 if (vanishResult.error) {
@@ -526,6 +519,10 @@ async function giveUserLevel(channelID: string, messageEventData: IChatMessage) 
     const isAdmin = await cache.sIsMember(`${channelID}:admins`, messageEventData.chatter_user_login!);
     if(isAdmin) {
         userLevel = 9;
+    }
+
+    if(messageEventData.chatter_user_id === channelID) {
+        userLevel = 10;
     }
 
     return userLevel;

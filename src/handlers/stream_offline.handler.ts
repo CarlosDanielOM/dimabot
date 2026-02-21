@@ -8,6 +8,7 @@ import { decrementSiteAnalytics } from "../utils/siteanalytics.js";
 import ChatHistory from "../classes/chat_history.js";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import { error as logError, info as logInfo } from "../utils/logger.js";
+import { recordStreamOfflineEvent } from "../utils/stream_analytics.js";
 
 interface StreamOfflineHandlerResponse {
     error: boolean;
@@ -23,6 +24,7 @@ export async function streamOfflineHandler(
         const { broadcaster_user_id } = eventData;
 
         if (!chatEnabled) {
+            await recordStreamOfflineEvent({ channelID: broadcaster_user_id });
             await resetRedemptionCost(broadcaster_user_id);
             await resetSumimetro(broadcaster_user_id);
             await clearChannelCache(broadcaster_user_id);
@@ -52,6 +54,8 @@ export async function streamOfflineHandler(
         }
 
         await resetRedemptionCost(broadcaster_user_id);
+
+        await recordStreamOfflineEvent({ channelID: broadcaster_user_id });
 
         await resetSumimetro(broadcaster_user_id);
 

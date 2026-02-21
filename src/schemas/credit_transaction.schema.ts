@@ -3,6 +3,7 @@ import { Schema, model, Types } from 'mongoose';
 export const TRANSACTION_TYPES = {
     REFERRAL_BONUS: 'referral_bonus',
     REFERRAL_PAYOUT: 'referral_payout',
+    SUBSCRIPTION_REWARD: 'subscription_reward',
     MANUAL_CREDIT: 'manual_credit',
     MANUAL_DEBIT: 'manual_debit',
 } as const;

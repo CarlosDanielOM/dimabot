@@ -21,6 +21,7 @@ import { websocket } from './websocket.js';
 import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
 import { getPolarShClient } from '../utils/polarsh.js';
 import { info, error } from '../utils/logger.js';
+import { reconcileLiveSessionsOnStartup, startStreamAnalyticsWorker } from '../utils/stream_analytics.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
@@ -36,6 +37,10 @@ await TwitchStreamers.getTwitchAccountsFromDB();
 
 // Initialize clip queue handler
 await clipQueueHandler.init();
+
+await reconcileLiveSessionsOnStartup();
+
+startStreamAnalyticsWorker();
 
 // Run startup cleanup for clip queue
 // TODO: Reactivate startup cleanup when testing is complete

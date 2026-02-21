@@ -15,7 +15,19 @@ router.post("/", express.raw({ type: 'application/json' }), async (req: Request,
             });
         }
 
-        const event = validateEvent(req.body, req.headers as Record<string, string>, secret);
+        const normalizedHeaders: Record<string, string> = {};
+        for (const [key, value] of Object.entries(req.headers)) {
+            if (Array.isArray(value)) {
+                normalizedHeaders[key] = value.join(',');
+                continue;
+            }
+
+            if (typeof value === 'string') {
+                normalizedHeaders[key] = value;
+            }
+        }
+
+        const event = validateEvent(req.body, normalizedHeaders, secret);
 
         await handlePolarSHEvent(event);
 
@@ -27,7 +39,7 @@ router.post("/", express.raw({ type: 'application/json' }), async (req: Request,
         if (error instanceof WebhookVerificationError) {
             return res.status(403).send('');
         }
-
+ 
         return res.status(500).json({
             error: true,
             message: 'Internal server error',

@@ -22,6 +22,18 @@ export const PRODUCT_IDS = {
 } as const;
 
 export type PlanType = 'FREE' | 'PREMIUM' | 'PRO';
+export type SubscriptionCadence = 'monthly' | 'yearly';
+
+const BOT_SUBSCRIPTION_REWARDS: Record<Exclude<PlanType, 'FREE'>, Record<SubscriptionCadence, number>> = {
+    PREMIUM: {
+        monthly: 50,
+        yearly: 500
+    },
+    PRO: {
+        monthly: 125,
+        yearly: 1250
+    }
+};
 
 export function getUserPlanType(user: IUsers): PlanType {
     if (user.plan_tier === 'pro') return 'PRO';
@@ -118,6 +130,13 @@ export interface ProcessRewardResult {
     codeUsed: string;
 }
 
+export interface ProcessBotSubscriptionRewardResult {
+    transactionId: Types.ObjectId;
+    botUserId: Types.ObjectId;
+    amount: number;
+    externalReference: string;
+}
+
 export async function processSubscriptionReward(
     payerPolarId: string,
     planId: string,
@@ -164,7 +183,7 @@ export async function processSubscriptionReward(
 
         UsersSchema.findOneAndUpdate(
             { _id: payer.referrerId },
-            { $inc: { tokenBalance: rewardAmount } },
+            { $inc: { token_balance: rewardAmount } },
             { new: true }
         ),
 
@@ -177,7 +196,7 @@ export async function processSubscriptionReward(
     if (transaction && updatedReferrer) {
         await CreditTransactionSchema.updateOne(
             { _id: transaction._id },
-            { balanceAfter: updatedReferrer.tokenBalance }
+            { balanceAfter: updatedReferrer.token_balance }
         );
     }
 
@@ -188,6 +207,126 @@ export async function processSubscriptionReward(
         referrerId: payer.referrerId,
         amount: rewardAmount,
         codeUsed: payer.referralCodeUsed
+    };
+}
+
+function getBotSubscriptionRewardAmount(planType: PlanType, cadence: SubscriptionCadence): number {
+    if (planType === 'FREE') {
+        return 0;
+    }
+
+    return BOT_SUBSCRIPTION_REWARDS[planType][cadence];
+}
+
+interface ProcessBotSubscriptionRewardOptions {
+    payerPolarId: string;
+    planId: string;
+    subscriptionId: string;
+    cadence: SubscriptionCadence;
+    externalReference: string;
+    botLogin?: string;
+}
+
+export async function processBotSubscriptionReward(
+    options: ProcessBotSubscriptionRewardOptions
+): Promise<ProcessBotSubscriptionRewardResult | null> {
+    const {
+        payerPolarId,
+        planId,
+        subscriptionId,
+        cadence,
+        externalReference,
+        botLogin = 'domdimabot'
+    } = options;
+
+    const payer = await UsersSchema.findOne({ polar_sh_customer_id: payerPolarId });
+    if (!payer) {
+        console.log(`Bot reward: Payer not found for polar_sh_customer_id: ${payerPolarId}`);
+        return null;
+    }
+
+    const existingTransaction = await CreditTransactionSchema.findOne({
+        'metadata.externalReference': externalReference
+    });
+    if (existingTransaction) {
+        console.log(`Bot reward: Reward already processed for reference: ${externalReference}`);
+        return null;
+    }
+
+    const planType = getPlanTypeFromProductId(planId);
+    const rewardAmount = getBotSubscriptionRewardAmount(planType, cadence);
+    if (rewardAmount <= 0) {
+        return null;
+    }
+
+    const botUser = await UsersSchema.findOne({
+        accounts: {
+            $elemMatch: {
+                type: 'twitch',
+                name: botLogin
+            }
+        }
+    });
+
+    if (!botUser) {
+        console.error(`Bot reward: Bot account '${botLogin}' not found`);
+        return null;
+    }
+
+    let rewardTargetUserId = botUser._id;
+    let rewardTargetType: 'bot' | 'referrer' = 'bot';
+
+    if (payer.referrerId && payer.referralCodeUsed) {
+        const referralCode = await ReferralCodeSchema.findOne({
+            code: payer.referralCodeUsed.toLowerCase(),
+            owner: payer.referrerId,
+            active: true
+        }).select('_id').lean();
+
+        const referrerExists = await UsersSchema.exists({ _id: payer.referrerId });
+
+        if (referralCode && referrerExists) {
+            rewardTargetUserId = payer.referrerId;
+            rewardTargetType = 'referrer';
+        }
+    }
+
+    const [transaction, updatedTargetUser] = await Promise.all([
+        CreditTransactionSchema.create({
+            user: rewardTargetUserId,
+            type: TRANSACTION_TYPES.SUBSCRIPTION_REWARD,
+            amount: rewardAmount,
+            metadata: {
+                referralCodeUsed: payer.referralCodeUsed,
+                referredUserId: payer._id,
+                subscriptionId,
+                planId,
+                description: `Subscription reward for ${planType} (${cadence})`,
+                externalReference,
+                rewardTargetType
+            }
+        }),
+        UsersSchema.findOneAndUpdate(
+            { _id: rewardTargetUserId },
+            { $inc: { token_balance: rewardAmount } },
+            { new: true }
+        )
+    ]);
+
+    if (!updatedTargetUser) {
+        return null;
+    }
+
+    await CreditTransactionSchema.updateOne(
+        { _id: transaction._id },
+        { balanceAfter: updatedTargetUser.token_balance }
+    );
+
+    return {
+        transactionId: transaction._id,
+        botUserId: rewardTargetUserId,
+        amount: rewardAmount,
+        externalReference
     };
 }
 
@@ -233,6 +372,6 @@ export async function getReferralStats(userId: Types.ObjectId): Promise<Referral
         codes,
         totalConversions: totalConversions[0]?.total || 0,
         totalEarned: totalEarned[0]?.total || 0,
-        currentBalance: user.tokenBalance || 0
+        currentBalance: user.token_balance || 0
     };
 }

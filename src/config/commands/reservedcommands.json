@@ -358,8 +358,8 @@
             "cooldown": 10,
             "enabled": true,
             "description": {
-                "en": "Creates a clip of the streamer with a duration of 30 seconds after using the command | Example: !clip | Example response: Saving clip... | If the function is successful the response will say Clip saved successfully | No arguments needed",
-                "es": "Crea un clip del streamer con una duracion de 30 segundos despues de usar el comando | Ejemplo: !clip | Ejemplo de respuesta: Guardando clip... | Si la funcion es exitosa la respuesta dira Clip guardado con exito | No necesita argumentos"
+                "en": "Creates a clip of the streamer with optional duration and title | Examples: !clip, !clip 20, !clip Epic moment, !clip 20 Epic moment | If the first argument is a number it is treated as duration (5-60 seconds), otherwise it is treated as title | Out-of-range durations default to 30 seconds",
+                "es": "Crea un clip del streamer con duracion y titulo opcionales | Ejemplos: !clip, !clip 20, !clip Momento epico, !clip 20 Momento epico | Si el primer argumento es un numero se toma como duracion (5-60 segundos), de lo contrario se toma como titulo | Duraciones fuera de rango usan 30 segundos por defecto"
             }
         },
         {

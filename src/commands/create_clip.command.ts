@@ -11,6 +11,44 @@ interface CreateClipCommandResponse {
     data?: any;
 }
 
+interface CreateClipOptions {
+    duration?: number;
+    title?: string;
+}
+
+const DEFAULT_CLIP_DURATION = 30;
+const MIN_CLIP_DURATION = 5;
+const MAX_CLIP_DURATION = 60;
+
+function parseClipOptions(argument?: string): CreateClipOptions {
+    const trimmedArgument = argument?.trim();
+
+    if (!trimmedArgument) {
+        return {};
+    }
+
+    const [firstToken, ...restTokens] = trimmedArgument.split(/\s+/);
+    const parsedNumber = Number(firstToken);
+    const firstTokenIsNumber = !isNaN(parsedNumber);
+
+    if (!firstTokenIsNumber) {
+        return {
+            title: trimmedArgument
+        };
+    }
+
+    const duration = parsedNumber >= MIN_CLIP_DURATION && parsedNumber <= MAX_CLIP_DURATION
+        ? parsedNumber
+        : DEFAULT_CLIP_DURATION;
+
+    const title = restTokens.join(' ').trim();
+
+    return {
+        duration,
+        title: title || undefined
+    };
+}
+
 async function checkClipStatus(clipID: string, retries: number = 0): Promise<CreateClipCommandResponse> {
     const getClipFun = await getClip(clipID);
 
@@ -37,9 +75,10 @@ async function checkClipStatus(clipID: string, retries: number = 0): Promise<Cre
     };
 }
 
-export async function createClipCommand(channelID: string): Promise<CreateClipCommandResponse> {
+export async function createClipCommand(channelID: string, argument?: string): Promise<CreateClipCommandResponse> {
     try {
-        const createClipFun = await createClip(channelID);
+        const clipOptions = parseClipOptions(argument);
+        const createClipFun = await createClip(channelID, clipOptions);
 
         if (createClipFun.status === 503) {
             return {
@@ -114,6 +153,7 @@ export async function createClipCommand(channelID: string): Promise<CreateClipCo
         await error({
             function: 'createClipCommand',
             channelID,
+            argument,
             error: err instanceof Error ? err.message : String(err),
             stack: err instanceof Error ? err.stack : undefined
         }, { channelId: channelID, destination: 'both' });

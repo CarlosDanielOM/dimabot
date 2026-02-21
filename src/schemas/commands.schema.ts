@@ -1,11 +1,13 @@
-import { Schema, model } from 'mongoose';
+import { Schema, model, Types } from 'mongoose';
 
 export interface ICommands {
+    _id?: Types.ObjectId;
     name: string;
     cmd: string;
     func: string;
     message: string;
     responses: string[];
+    variables: Map<string, string>;
     type: string;
     platform: string;
     reserved: boolean;
@@ -35,6 +37,11 @@ const commandsSchema = new Schema({
     func: String,
     message: { type: String, default: '' },
     responses: { type: Array, default: [] },
+    variables: {
+        type: Map,
+        of: String,
+        default: {}
+    },
     type: { type: String, default: 'command' },
     platform: {type: String, default: 'twitch'},
     reserved: { type: Boolean, default: false },

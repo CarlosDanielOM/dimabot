@@ -1,12 +1,15 @@
 import express, { type Request, type Response } from "express";
+import path from "path";
 import { getIO } from "../websocket.js";
+import { getDirname } from "../../utils/pollyfills.js";
 
 const router = express.Router();
+const __dirname = getDirname(import.meta.url);
 
     // GET /overlays/triggers/:channelID - Serve trigger.html
 router.get('/overlays/triggers/:channelID', async (req: Request, res: Response) => {
         try {
-            res.sendFile(process.cwd() + '/src/server/routes/public/trigger.html');
+            res.sendFile(path.join(__dirname, 'public', 'trigger.html'));
         } catch (error) {
             console.error('Error serving trigger overlay:', {
                 channelID: req.params.channelID,
@@ -25,7 +28,7 @@ router.get('/overlays/triggers/:channelID', async (req: Request, res: Response) 
     // GET /overlays/furry/:channelID - Serve furry.html
 router.get('/overlays/furry/:channelID', async (req: Request, res: Response) => {
         try {
-            res.sendFile(process.cwd() + '/src/server/routes/public/furry.html');
+            res.sendFile(path.join(__dirname, 'public', 'furry.html'));
         } catch (error) {
             console.error('Error serving furry overlay:', {
                 channelID: req.params.channelID,

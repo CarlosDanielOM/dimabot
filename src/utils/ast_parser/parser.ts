@@ -1,4 +1,4 @@
-import type { RootNode, AstNode, AstParseResult, LiteralNode } from './types.js';
+import type { RootNode, AstNode, AstParseResult } from './types.js';
 import { tokenize } from './tokenizer.js';
 import { parseExpression, SyntaxRegistry } from './registry.js';
 import type { SyntaxDefinition } from './types.js';
@@ -27,12 +27,9 @@ export function parse(input: string, registry: Map<string, SyntaxDefinition> = S
         } else if (token === ')') {
             i++;
         } else {
-            const literalNode: LiteralNode = {
-                type: 'literal',
-                value: token
-            };
-            children.push(literalNode);
-            i++;
+            const result = parseExpression(tokens, i, registry);
+            children.push(result.node);
+            i = result.newIndex;
         }
     }
     
@@ -71,6 +68,10 @@ export function printAst(node: AstNode, indent: number = 0): string {
             output += `${prefix}GetVar("${node.name}")\n`;
             break;
             
+        case 'exists':
+            output += `${prefix}Exists("${node.name}")\n`;
+            break;
+            
         case 'function':
             output += `${prefix}Function("${node.name}")\n`;
             if (node.args.length > 0) {
@@ -83,15 +84,61 @@ export function printAst(node: AstNode, indent: number = 0): string {
             
         case 'conditional':
             output += `${prefix}Conditional\n`;
-            output += `${prefix}  left:\n`;
-            output += printAst(node.left, indent + 2);
-            output += `${prefix}  operator: "${node.operator}"\n`;
-            output += `${prefix}  right:\n`;
-            output += printAst(node.right, indent + 2);
+            if (node.condition) {
+                output += `${prefix}  condition:\n`;
+                output += printAst(node.condition, indent + 2);
+            }
+            if (node.left) {
+                output += `${prefix}  left:\n`;
+                output += printAst(node.left, indent + 2);
+            }
+            if (node.operator) {
+                output += `${prefix}  operator: "${node.operator}"\n`;
+            }
+            if (node.right) {
+                output += `${prefix}  right:\n`;
+                output += printAst(node.right, indent + 2);
+            }
             output += `${prefix}  trueBranch:\n`;
             output += printAst(node.trueBranch, indent + 2);
             output += `${prefix}  falseBranch:\n`;
             output += printAst(node.falseBranch, indent + 2);
+            break;
+            
+        case 'binary':
+            output += `${prefix}Binary("${node.operator}")\n`;
+            output += `${prefix}  left:\n`;
+            output += printAst(node.left, indent + 2);
+            output += `${prefix}  right:\n`;
+            output += printAst(node.right, indent + 2);
+            break;
+            
+        case 'unary':
+            output += `${prefix}Unary("${node.operator}")\n`;
+            output += `${prefix}  argument:\n`;
+            output += printAst(node.argument, indent + 2);
+            break;
+            
+        case 'ternary':
+            output += `${prefix}Ternary\n`;
+            output += `${prefix}  test:\n`;
+            output += printAst(node.test, indent + 2);
+            output += `${prefix}  consequent:\n`;
+            output += printAst(node.consequent, indent + 2);
+            output += `${prefix}  alternate:\n`;
+            output += printAst(node.alternate, indent + 2);
+            break;
+            
+        case 'template':
+            output += `${prefix}Template\n`;
+            for (const seg of node.segments) {
+                if (seg.type === 'text') {
+                    output += `${prefix}  Text: "${seg.value}"\n`;
+                } else {
+                    output += `${prefix}  Expr:\n`;
+                    output += printAst(seg.node, indent + 2);
+                }
+            }
             break;
             
         case 'literal':

@@ -31,7 +31,16 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
         const eventData = req.body;
         const eventType = eventData.type;
 
-        const requiredFields: Array<string> = ['name', 'type', 'icon', 'color', 'textColor', 'description', 'config'];
+        const requiredFields: Array<string> = [
+            'name',
+            'type',
+            'icon',
+            'color',
+            'textColor',
+            'description',
+            'config',
+            'plan_tier'
+        ];
         for (const field of requiredFields) {
             if (!eventData[field]) {
                 return res.status(400).json({
@@ -54,6 +63,14 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
             return res.status(400).json({
                 error: true,
                 message: 'Config must be a non-empty array',
+                status: 400
+            });
+        }
+
+        if (!['free', 'premium', 'pro'].includes(eventData.plan_tier)) {
+            return res.status(400).json({
+                error: true,
+                message: 'plan_tier must be one of: free, premium, pro',
                 status: 400
             });
         }

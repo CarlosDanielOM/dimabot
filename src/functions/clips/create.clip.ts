@@ -24,7 +24,12 @@ interface CreateClipResponse {
     clipID?: string;
 }
 
-export async function createClip(channelID: string): Promise<CreateClipResponse> {
+interface CreateClipOptions {
+    duration?: number;
+    title?: string;
+}
+
+export async function createClip(channelID: string, options?: CreateClipOptions): Promise<CreateClipResponse> {
     try {
         const botHeaderResult = await getTwitchBotHeader();
 
@@ -41,6 +46,14 @@ export async function createClip(channelID: string): Promise<CreateClipResponse>
 
         const params = new URLSearchParams();
         params.append('broadcaster_id', channelID);
+
+        if (typeof options?.duration === 'number' && !isNaN(options.duration)) {
+            params.append('duration', String(options.duration));
+        }
+
+        if (options?.title && options.title.trim()) {
+            params.append('title', options.title.trim());
+        }
 
         const response = await fetch(getTwitchHelixUrl('clips', params.toString()), {
             method: 'POST',
@@ -86,6 +99,7 @@ export async function createClip(channelID: string): Promise<CreateClipResponse>
     } catch (err) {
         await logError({ function: 'createClip',
             channelID,
+            options,
             error: err instanceof Error ? err.message : String(err),
             stack: err instanceof Error ? err.stack : undefined,
         }, { channelId: channelID, destination: 'both' });

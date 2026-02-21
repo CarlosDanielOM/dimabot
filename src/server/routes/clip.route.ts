@@ -48,13 +48,34 @@ router.post('/test', async (req: Request, res: Response) => {
             });
         }
 
-        const result = await promo(channelID, streamer);
+        const result = await promo(channelID, streamer, true);
 
         if (result.error) {
             return res.status(result.status || 500).json(result);
         }
 
-        res.status(200).json(result);
+        const clipMessage =
+            typeof result.data?.clip?.message === 'string'
+                ? result.data.clip.message.toLowerCase()
+                : '';
+
+        if (clipMessage.includes('obs not connected')) {
+            return res.status(409).json({
+                error: true,
+                message: 'Clip overlay is not connected. Open the clip URL first and try again.',
+                status: 409,
+                data: {
+                    reason: 'obs_not_connected'
+                }
+            });
+        }
+
+        res.status(200).json({
+            error: false,
+            message: 'Clip test queued successfully',
+            status: 200,
+            data: result.data
+        });
     } catch (error) {
         console.error('Error in clip test:', {
             body: req.body,
