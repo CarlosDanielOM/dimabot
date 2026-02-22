@@ -10,6 +10,64 @@ export function tokenize(input: string, registry: Map<string, SyntaxDefinition> 
     while (i < input.length) {
         const remaining = input.slice(i);
 
+        if (remaining.startsWith('%[')) {
+            let endIndex = i + 2;
+            let depth = 1;
+            let inQuote: 'single' | 'double' | null = null;
+
+            while (endIndex < input.length && depth > 0) {
+                const char = input[endIndex];
+
+                if (inQuote) {
+                    if (char === '\\') {
+                        endIndex += 2;
+                        continue;
+                    }
+
+                    if ((inQuote === 'single' && char === '\'') || (inQuote === 'double' && char === '"')) {
+                        inQuote = null;
+                    }
+
+                    endIndex++;
+                    continue;
+                }
+
+                if (char === '"') {
+                    inQuote = 'double';
+                    endIndex++;
+                    continue;
+                }
+
+                if (char === '\'') {
+                    inQuote = 'single';
+                    endIndex++;
+                    continue;
+                }
+
+                if (char === '[') {
+                    depth++;
+                    endIndex++;
+                    continue;
+                }
+
+                if (char === ']') {
+                    depth--;
+                    if (depth === 0) {
+                        break;
+                    }
+                }
+
+                endIndex++;
+            }
+
+            if (depth === 0) {
+                const content = input.slice(i + 2, endIndex);
+                tokens.push(`__ARRAY__:${content}`);
+                i = endIndex + 1;
+                continue;
+            }
+        }
+
         if (remaining.startsWith('http://') || remaining.startsWith('https://')) {
             let urlEnd = i;
 

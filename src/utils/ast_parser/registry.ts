@@ -1,4 +1,4 @@
-import type { AstNode, ParseResult, ParserHandler, SyntaxDefinition, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, TemplateSegment, VariableStorage, ArrayAccessor, BinaryOperator, UnaryOperator } from './types.js';
+import type { AstNode, ParseResult, ParserHandler, SyntaxDefinition, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, TemplateSegment, VariableStorage, ArrayAccessor, BinaryOperator, UnaryOperator, ArrayLiteralNode } from './types.js';
 import { tokenize } from './tokenizer.js';
 
 export type { SyntaxDefinition } from './types.js';
@@ -99,6 +99,121 @@ function parseTemplateString(content: string, registry: Map<string, SyntaxDefini
     return templateNode;
 }
 
+function splitArrayLiteralItems(content: string): string[] {
+    const items: string[] = [];
+    let current = '';
+    let inQuote: 'single' | 'double' | null = null;
+    let bracketDepth = 0;
+    let parenDepth = 0;
+    let braceDepth = 0;
+
+    for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+
+        if (inQuote) {
+            current += char;
+            if (char === '\\' && i + 1 < content.length) {
+                current += content[i + 1];
+                i++;
+                continue;
+            }
+
+            if ((inQuote === 'single' && char === '\'') || (inQuote === 'double' && char === '"')) {
+                inQuote = null;
+            }
+            continue;
+        }
+
+        if (char === '"') {
+            inQuote = 'double';
+            current += char;
+            continue;
+        }
+
+        if (char === '\'') {
+            inQuote = 'single';
+            current += char;
+            continue;
+        }
+
+        if (char === '[') {
+            bracketDepth++;
+            current += char;
+            continue;
+        }
+
+        if (char === ']') {
+            bracketDepth = Math.max(0, bracketDepth - 1);
+            current += char;
+            continue;
+        }
+
+        if (char === '(') {
+            parenDepth++;
+            current += char;
+            continue;
+        }
+
+        if (char === ')') {
+            parenDepth = Math.max(0, parenDepth - 1);
+            current += char;
+            continue;
+        }
+
+        if (char === '{') {
+            braceDepth++;
+            current += char;
+            continue;
+        }
+
+        if (char === '}') {
+            braceDepth = Math.max(0, braceDepth - 1);
+            current += char;
+            continue;
+        }
+
+        if (char === ',' && bracketDepth === 0 && parenDepth === 0 && braceDepth === 0) {
+            const trimmed = current.trim();
+            if (trimmed.length > 0) {
+                items.push(trimmed);
+            }
+            current = '';
+            continue;
+        }
+
+        current += char;
+    }
+
+    const last = current.trim();
+    if (last.length > 0) {
+        items.push(last);
+    }
+
+    return items;
+}
+
+function parseArrayLiteral(content: string, registry: Map<string, SyntaxDefinition>): ArrayLiteralNode {
+    const rawItems = splitArrayLiteralItems(content);
+    const items: AstNode[] = [];
+
+    for (const rawItem of rawItems) {
+        const tokenized = tokenize(rawItem, registry);
+
+        if (tokenized.tokens.length === 0) {
+            items.push({ type: 'literal', value: '' });
+            continue;
+        }
+
+        const itemResult = parseStarExpression(tokenized.tokens, 0, registry, 0);
+        items.push(itemResult.node);
+    }
+
+    return {
+        type: 'arrayLiteral',
+        items
+    };
+}
+
 export const parseExpression = (
     tokens: string[],
     currentIndex: number,
@@ -128,6 +243,12 @@ export const parseExpression = (
             .replace(/\\\\/g, '\\');
         const templateNode = parseTemplateString(unescapedContent, registry);
         return { node: templateNode, newIndex: currentIndex + 1 };
+    }
+
+    if (token.startsWith('__ARRAY__:')) {
+        const content = token.slice('__ARRAY__:'.length);
+        const arrayNode = parseArrayLiteral(content, registry);
+        return { node: arrayNode, newIndex: currentIndex + 1 };
     }
     
     return parseLiteral(tokens, currentIndex);
@@ -369,6 +490,12 @@ function parseAtom(
             .replace(/\\\\/g, '\\');
         const templateNode = parseTemplateString(unescapedContent, registry);
         return { node: templateNode, newIndex: i + 1 };
+    }
+
+    if (token.startsWith('__ARRAY__:')) {
+        const content = token.slice('__ARRAY__:'.length);
+        const arrayNode = parseArrayLiteral(content, registry);
+        return { node: arrayNode, newIndex: i + 1 };
     }
     
     const definition = registry.get(token);

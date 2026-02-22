@@ -1,4 +1,4 @@
-import type { AstNode, ExecutionContext, EvaluateResult, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, CustomNode, RootNode, VariableStorage, ArrayAccessor } from './types.js';
+import type { AstNode, ExecutionContext, EvaluateResult, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, CustomNode, RootNode, VariableStorage, ArrayAccessor, ArrayLiteralNode } from './types.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 
 type InternalComparisonOperator = '==' | '=' | '!=' | '<>' | '>' | '<' | '>=' | '<=' | '~=';
@@ -337,10 +337,13 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             const valueResult = await evaluate(value, context);
             const valueStr = String(valueResult.value);
             let currentContext = valueResult.context;
+            const appendValues = Array.isArray(valueResult.value)
+                ? valueResult.value.map(item => String(item))
+                : [valueStr];
             
             if (name === 'responses' && storage === 'memory') {
                 if (accessor?.type === 'append') {
-                    context.commandResponses.push(valueStr);
+                    context.commandResponses.push(...appendValues);
                     await context.saveResponses();
                     return { value: String(context.commandResponses.length), context: currentContext };
                 }
@@ -366,7 +369,7 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             
             switch (accessor.type) {
                 case 'append': {
-                    arrayData.push(valueStr);
+                    arrayData.push(...appendValues);
                     await saveValueToStorage(name, storage, JSON.stringify(arrayData), context);
                     return { value: String(arrayData.length), context: currentContext };
                 }
@@ -598,6 +601,20 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             }
             
             return { value: parts.join(''), context: currentContext };
+        }
+
+        case 'arrayLiteral': {
+            const arrayNode = node as ArrayLiteralNode;
+            const values: string[] = [];
+            let currentContext = context;
+
+            for (const item of arrayNode.items) {
+                const result = await evaluate(item, currentContext);
+                currentContext = result.context;
+                values.push(String(result.value ?? ''));
+            }
+
+            return { value: values, context: currentContext };
         }
         
         case 'custom': {

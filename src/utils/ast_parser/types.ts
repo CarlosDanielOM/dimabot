@@ -1,4 +1,4 @@
-export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template';
+export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template' | 'arrayLiteral';
 
 export type TemplateSegment = { type: 'text'; value: string } | { type: 'expr'; node: AstNode };
 
@@ -98,13 +98,18 @@ export interface LiteralNode extends BaseNode {
     value: string;
 }
 
+export interface ArrayLiteralNode extends BaseNode {
+    type: 'arrayLiteral';
+    items: AstNode[];
+}
+
 export interface CustomNode<T = unknown> extends BaseNode {
     type: 'custom';
     customType: string;
     data: T;
 }
 
-export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | CustomNode;
+export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | ArrayLiteralNode | CustomNode;
 
 export interface IStreamerData {
     id?: string;

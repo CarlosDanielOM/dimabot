@@ -144,6 +144,13 @@ export function printAst(node: AstNode, indent: number = 0): string {
         case 'literal':
             output += `${prefix}Literal("${node.value}")\n`;
             break;
+
+        case 'arrayLiteral':
+            output += `${prefix}ArrayLiteral\n`;
+            for (const item of node.items) {
+                output += printAst(item, indent + 1);
+            }
+            break;
             
         case 'custom':
             output += `${prefix}Custom("${node.customType}")\n`;

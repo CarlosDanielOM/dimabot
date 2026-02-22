@@ -39,6 +39,31 @@ interface IExtractedNumericInfo {
     viewers?: number;
 }
 
+interface IBadgeLike {
+    set_id?: string;
+    id?: string;
+}
+
+const MODERATOR_BADGE_IDS = new Set([
+    'moderator',
+    'lead_mod',
+    'lead_moderator',
+    'mod'
+]);
+
+function inferUserLevelFromBadges(eventData: any): number {
+    const badges = Array.isArray(eventData?.badges) ? (eventData.badges as IBadgeLike[]) : [];
+
+    for (const badge of badges) {
+        const badgeSetId = String(badge?.set_id || badge?.id || '').toLowerCase();
+        if (MODERATOR_BADGE_IDS.has(badgeSetId)) {
+            return 7;
+        }
+    }
+
+    return 1;
+}
+
 function extractUserInfo(eventData: any): IExtractedUserInfo {
     if (!eventData) return {};
     
@@ -117,13 +142,16 @@ export async function parseSpecialCommands(
         }
     }
     
+    const inferredUserLevel = inferUserLevelFromBadges(context.eventData || {});
+    const effectiveUserLevel = Math.max(context.userLevel ?? 1, inferredUserLevel);
+
     const astContext: ExecutionContext = createExecutionContext({
         broadcasterId: context.channelID,
         userId: extracted.userID || '',
         userLogin: extracted.userLogin || '',
         userDisplayName: extracted.userName || '',
         userPlan: context.userPlan || 'free',
-        userLevel: context.userLevel || 1,
+        userLevel: effectiveUserLevel,
         argument: context.argument,
         count: context.count || 0,
         eventData: context.eventData || {},
