@@ -22,6 +22,7 @@ import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
 import { getPolarShClient } from '../utils/polarsh.js';
 import { info, error } from '../utils/logger.js';
 import { reconcileLiveSessionsOnStartup, startStreamAnalyticsWorker } from '../utils/stream_analytics.js';
+import { startSiteAnalytics } from '../utils/siteanalytics.js';
 
 await getDragonflyClient('Server');
 await getMongoDBConnection('Server');
@@ -35,12 +36,15 @@ await QdrantStartUp();
 
 await TwitchStreamers.getTwitchAccountsFromDB();
 
+await startSiteAnalytics();
+
 // Initialize clip queue handler
 await clipQueueHandler.init();
 
-await reconcileLiveSessionsOnStartup();
-
-startStreamAnalyticsWorker();
+if (process.env.STREAM_ANALYTICS_INLINE === 'true') {
+    await reconcileLiveSessionsOnStartup();
+    startStreamAnalyticsWorker();
+}
 
 // Run startup cleanup for clip queue
 // TODO: Reactivate startup cleanup when testing is complete

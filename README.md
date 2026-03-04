@@ -96,6 +96,33 @@ The application consists of two main parts: the web server and the Twitch bot. Y
 
 Both will run with `nodemon`, which will automatically restart the application when file changes are detected.
 
+## Cron Workers
+
+The cron supervisor manages background workers for tasks like follow ledger tracking and stream analytics. The supervisor runs from `src/workers/cron.index.ts` (built as `dist/workers/cron.index.js`).
+
+### Running Cron Workers
+
+-   **Normal mode (persistent, auto-restart):**
+    ```bash
+    node dist/workers/cron.index.js
+    ```
+
+-   **Dry-run mode (for testing, no actual work):**
+    ```bash
+    node dist/workers/cron.index.js --dry-run
+    ```
+
+-   **Once mode (run once and exit, no restart):**
+    ```bash
+    node dist/workers/cron.index.js --once
+    ```
+
+-   **Dry-run + once mode (CI-safe smoke test):**
+    ```bash
+    node dist/workers/cron.index.js --dry-run --once
+    ```
+    This runs all workers once in dry-run mode and exits with code 0 if all workers succeed, or code 1 if any worker fails. Useful for smoke testing in CI/CD pipelines.
+
 ## How to Use (Bot Commands)
 
 The bot responds to commands in the Twitch chat. The default prefix is `!`, but this can be customized. Here is a list of some of the available commands:

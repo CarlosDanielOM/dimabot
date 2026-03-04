@@ -1,0 +1,24 @@
+services:
+  # =========================================
+  # DEV BOT (Combined for Local Dev)
+  # =========================================
+  dev-bot:
+    build:
+      context: .
+      dockerfile: dockerfile
+      args:
+        - SERVICE_NAME=all
+        - NODE_ENV=development
+    image: dimabot/dev-bot:latest
+    container_name: dima-bot-dev
+    command: npm run dev-all
+    env_file:
+      - .env
+    volumes:
+      - .:/app
+      - /app/node_modules # Don't overwrite container modules with local ones
+    ports:
+      - "3000:3000"
+    networks:
+      - web-proxy
+      - databases

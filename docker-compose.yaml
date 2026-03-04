@@ -5,6 +5,7 @@ services:
   api-server:
     build:
       context: .
+      dockerfile: dockerfile
       args:
         - SERVICE_NAME=server
         - NODE_ENV=production
@@ -23,6 +24,7 @@ services:
   chat-bot:
     build:
       context: .
+      dockerfile: dockerfile
       args:
         - SERVICE_NAME=bot
         - NODE_ENV=production
@@ -36,24 +38,20 @@ services:
       - databases
 
   # =========================================
-  # SERVICE 3: DEV BOT (Combined for Local Dev)
+  # SERVICE 3: CRON WORKERS (Host Process)
   # =========================================
-  dev-bot:
+  dima-cron:
     build:
       context: .
+      dockerfile: dockerfile
       args:
-        - SERVICE_NAME=all
-        - NODE_ENV=development
-    image: dimabot/dev-bot:latest
-    container_name: dima-bot-dev
-    command: npm run dev-all
-    env_file:
-      - .env
-    volumes:
-      - .:/app
-      - /app/node_modules # Don't overwrite container modules with local ones
-    ports:
-      - "3000:3000"
+        - SERVICE_NAME=cron
+        - NODE_ENV=production
+    container_name: dima-cron
+    command: node dist/workers/cron.index.js
+    restart: always
+    env_file: .env
+    stop_grace_period: 30s
     networks:
       - web-proxy
       - databases
