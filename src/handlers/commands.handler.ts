@@ -11,6 +11,8 @@ import { parseSpecialCommands } from './special_parser.handler.js';
  */
 interface ICommandData {
     enabled: boolean;
+    name?: string;
+    cmd?: string;
     message: string;
     type?: string;
     count?: number;
@@ -34,7 +36,7 @@ interface ICommandResponse {
 
 async function commandHandler(
     channelID: string,
-    messageEventData: ITwitchEventData,
+    messageEventData: ITwitchEventData | Record<string, unknown>,
     command: string,
     argument?: string
 ): Promise<ICommandResponse> {
@@ -51,6 +53,8 @@ async function commandHandler(
 
     const commandData: ICommandData = {
         enabled: cmdDB.command.enabled,
+        name: cmdDB.command.name,
+        cmd: cmdDB.command.cmd,
         message: cmdDB.command.message || '',
         type: cmdDB.command.type,
         count: cmdDB.command.count || 0
@@ -68,6 +72,9 @@ async function commandHandler(
     // Use the standalone special commands parser
     const specialRes = await parseSpecialCommands(commandData.message, {
         channelID,
+        scopeType: 'command',
+        scopeName: commandData.cmd || command,
+        scopeAliases: commandData.name ? [commandData.name] : [],
         eventData: messageEventData,
         argument: argument || '',
         count: commandData.count || 0

@@ -1,4 +1,4 @@
-export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template' | 'arrayLiteral';
+export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template' | 'arrayLiteral' | 'commandRef';
 
 export type TemplateSegment = { type: 'text'; value: string } | { type: 'expr'; node: AstNode };
 
@@ -36,6 +36,7 @@ export interface SetVarNode extends BaseNode {
     storage: VariableStorage;
     value: AstNode;
     accessor?: ArrayAccessor;
+    userSelector?: AstNode;
 }
 
 export interface GetVarNode extends BaseNode {
@@ -43,6 +44,7 @@ export interface GetVarNode extends BaseNode {
     name: string;
     storage: VariableStorage;
     accessor?: ArrayAccessor;
+    userSelector?: AstNode;
 }
 
 export interface ExistsNode extends BaseNode {
@@ -50,6 +52,13 @@ export interface ExistsNode extends BaseNode {
     name: string;
     storage: VariableStorage;
     accessor?: ArrayAccessor;
+    userSelector?: AstNode;
+}
+
+export interface CommandRefNode extends BaseNode {
+    type: 'commandRef';
+    commandName: string;
+    args: AstNode[];
 }
 
 export interface FunctionNode extends BaseNode {
@@ -109,7 +118,7 @@ export interface CustomNode<T = unknown> extends BaseNode {
     data: T;
 }
 
-export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | ArrayLiteralNode | CustomNode;
+export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | ArrayLiteralNode | CustomNode | CommandRefNode;
 
 export interface IStreamerData {
     id?: string;
@@ -133,15 +142,21 @@ export interface ExecutionContext {
     extraContext?: Record<string, unknown>;
     streamer?: IStreamerData | null;
     platform: string;
+    scopeType: string;
+    scopeName: string;
+    scopeAliases: string[];
     commandName: string;
     commandId: string;
+    visitedCommands?: Set<string>;
+    commandRefDepth?: number;
     commandResponses: string[];
     commandVariables: Map<string, string>;
     userCommandVariables: Map<string, string>;
     saveResponses: () => Promise<void>;
     saveChannelVariable: (name: string, value: string) => Promise<void>;
+    loadChannelVariable: (name: string) => Promise<string>;
     saveUserVariable: (name: string, value: string) => Promise<void>;
-    loadUserVariable: (name: string) => Promise<string>;
+    loadUserVariable: (name: string, targetUserLogin?: string) => Promise<string>;
 }
 
 export interface ParseResult {

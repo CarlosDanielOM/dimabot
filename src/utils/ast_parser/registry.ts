@@ -258,6 +258,16 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
     const rawName = tokens[currentIndex + 1];
     const { storage } = parseVarName(rawName);
     let i = currentIndex + 2;
+
+    let userSelector: AstNode | undefined;
+    if ((storage === 'cacheUser' || storage === 'dbUser') && tokens[i] === '(') {
+        const selectorResult = parseExpression(tokens, i + 1, registry);
+        userSelector = selectorResult.node;
+        i = selectorResult.newIndex;
+        if (tokens[i] === ')') {
+            i++;
+        }
+    }
     
     let accessor: ArrayAccessor | undefined;
     
@@ -297,7 +307,8 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
             name: rawName,
             storage,
             value: valueResult.node,
-            accessor: { type: 'append' }
+            accessor: { type: 'append' },
+            userSelector
         };
         return { node: setNode, newIndex: i };
     }
@@ -312,7 +323,8 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
             name: rawName,
             storage,
             value: valueResult.node,
-            accessor: { type: 'setIndex', index: accessor.index }
+            accessor: { type: 'setIndex', index: accessor.index },
+            userSelector
         };
         return { node: setNode, newIndex: i };
     }
@@ -326,7 +338,8 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
             type: 'setVar',
             name: rawName,
             storage,
-            value: valueResult.node
+            value: valueResult.node,
+            userSelector
         };
         return { node: setNode, newIndex: i };
     }
@@ -337,7 +350,8 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
         type: 'getVar',
         name: rawName,
         storage,
-        accessor
+        accessor,
+        userSelector
     };
     return { node: getNode, newIndex: i };
 };
@@ -346,6 +360,16 @@ const parseExists: ParserHandler = (tokens, currentIndex, registry) => {
     const rawName = tokens[currentIndex + 1];
     const { storage } = parseVarName(rawName);
     let i = currentIndex + 2;
+
+    let userSelector: AstNode | undefined;
+    if ((storage === 'cacheUser' || storage === 'dbUser') && tokens[i] === '(') {
+        const selectorResult = parseExpression(tokens, i + 1, registry);
+        userSelector = selectorResult.node;
+        i = selectorResult.newIndex;
+        if (tokens[i] === ')') {
+            i++;
+        }
+    }
     
     let accessor: ArrayAccessor | undefined;
     
@@ -376,9 +400,43 @@ const parseExists: ParserHandler = (tokens, currentIndex, registry) => {
         type: 'exists',
         name: rawName,
         storage,
-        accessor
+        accessor,
+        userSelector
     };
     return { node: existsNode, newIndex: i };
+};
+
+const parseCommandRef: ParserHandler = (tokens, currentIndex, registry) => {
+    let i = currentIndex + 1;
+    const commandName = tokens[i];
+
+    if (!commandName || commandName === ')') {
+        return { node: { type: 'literal', value: '' }, newIndex: currentIndex + 2 };
+    }
+
+    i++;
+    const args: AstNode[] = [];
+
+    while (i < tokens.length && tokens[i] !== ')') {
+        const result = parseExpression(tokens, i, registry);
+        if (result.node.type !== 'literal' || (result.node as LiteralNode).value !== '') {
+            args.push(result.node);
+        }
+        i = result.newIndex;
+    }
+
+    if (tokens[i] === ')') {
+        i++;
+    }
+
+    return {
+        node: {
+            type: 'commandRef',
+            commandName: String(commandName),
+            args
+        },
+        newIndex: i
+    };
 };
 
 const parseFunction: ParserHandler = (tokens, currentIndex, registry) => {
@@ -692,6 +750,12 @@ export const createSyntaxRegistry = (): Map<string, SyntaxDefinition> => {
         startToken: '^(',
         endToken: ')',
         handler: parseExists
+    });
+
+    registry.set('#(', {
+        startToken: '#(',
+        endToken: ')',
+        handler: parseCommandRef
     });
     
     return registry;
