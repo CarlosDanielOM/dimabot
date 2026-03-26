@@ -1,5 +1,6 @@
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 import { error, warn } from "../utils/logger.js";
+import { recordRedisOpsEstimate } from "../utils/observability/bot_runtime_metrics.js";
 
 type DragonflyClient = Awaited<ReturnType<typeof getDragonflyClient>>;
 
@@ -25,9 +26,11 @@ class ChatHistory {
             
             // Add new message
             await cache.lPush(key, messageData);
+            recordRedisOpsEstimate(1);
 
             // Trim history to max size
             await cache.lTrim(key, 0, this.maxHistorySize - 1);
+            recordRedisOpsEstimate(1);
 
         } catch (err) {
             await error({ function: 'ChatHistory.addMessage', error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
@@ -46,6 +49,7 @@ class ChatHistory {
 
             const key = `${platform}:${channelID}:chat:history`;
             const messages = await cache.lRange(key, 0, limit - 1);
+            recordRedisOpsEstimate(1);
 
             return messages.map(msg => JSON.parse(msg));
 
@@ -66,6 +70,7 @@ class ChatHistory {
 
             const key = `${platform}:${channelID}:chat:history`;
             await cache.del(key);
+            recordRedisOpsEstimate(1);
         } catch (err) {
             await error({ function: 'ChatHistory.clearHistory', error: err instanceof Error ? err.message : String(err) }, { channelId: channelID, destination: 'both' });
             return;

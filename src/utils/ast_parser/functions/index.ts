@@ -7,6 +7,7 @@ import { registerChannelFunctions } from './channel.functions.js';
 import { registerClipFunctions } from './clip.functions.js';
 import { registerFollowageFunctions } from './followage.functions.js';
 import { registerEventsubFunctions } from './eventsub.functions.js';
+import { registerTtsFunctions } from './tts.functions.js';
 import { registerTriggerFunctions } from './trigger.functions.js';
 
 let registered = false;
@@ -24,6 +25,7 @@ export function registerAllFunctions(): void {
     registerClipFunctions();
     registerFollowageFunctions();
     registerEventsubFunctions();
+    registerTtsFunctions();
     registerTriggerFunctions();
 }
 

@@ -1,7 +1,9 @@
 import express, { type Request, type Response } from "express";
 import { getDragonflyClient } from "../../utils/databases/dragonfly.database.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
-import { CommandsSchema, type ICommands } from "../../schemas/commands.schema.js";
+import { CommandsSchema } from "../../schemas/commands.schema.js";
+import UsersSchema from "../../schemas/users.schema.js";
+import { ensureReservedCommands, getLocalizedReservedCommandDescription } from "../services/command_defaults.service.js";
 
 const router = express.Router();
 
@@ -43,11 +45,50 @@ router.get('/:channelID', async (req: Request, res: Response) => {
             const query = req.query;
             const limit = parseInt((query.limit as string) || '100');
             const skip = parseInt((query.skip as string) || '0');
+            const language = typeof query.language === 'string' ? query.language : undefined;
 
-            const commands = await CommandsSchema.find({ channelID: channelIdStr })
+            let commands = await CommandsSchema.find({ channelID: channelIdStr })
+                .sort({ reserved: -1, name: 1 })
                 .skip(skip)
                 .limit(limit)
                 .lean();
+
+            if (commands.length === 0) {
+                const user = await UsersSchema.findOne({
+                    accounts: {
+                        $elemMatch: {
+                            type: 'twitch',
+                            id: channelIdStr,
+                            actived: true
+                        }
+                    }
+                }).select('accounts').lean();
+
+                const twitchAccount = user?.accounts?.find((account) => account.type === 'twitch' && account.id === channelIdStr);
+
+                if (twitchAccount?.actived) {
+                    const createdCount = await ensureReservedCommands(channelIdStr, twitchAccount.name || channelIdStr);
+
+                    if (createdCount > 0) {
+                        commands = await CommandsSchema.find({ channelID: channelIdStr })
+                            .sort({ reserved: -1, name: 1 })
+                            .skip(skip)
+                            .limit(limit)
+                            .lean();
+                    }
+                }
+            }
+
+            commands = commands.map((command) => {
+                if (!command.reserved) {
+                    return command;
+                }
+
+                return {
+                    ...command,
+                    description: getLocalizedReservedCommandDescription(command, language, command.description || '')
+                };
+            });
 
             res.send({
                 error: false,
@@ -153,6 +194,7 @@ router.put('/:channelID/:commandID', authMiddleware as any, async (req: Request,
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
             const commandIdStr = Array.isArray(commandID) ? commandID[0] : commandID;
             const body = req.body;
+            const language = typeof req.query.language === 'string' ? req.query.language : undefined;
 
             const cacheClient = await getDragonflyClient();
 
@@ -169,17 +211,19 @@ router.put('/:channelID/:commandID', authMiddleware as any, async (req: Request,
                 });
             }
 
-            if (command.reserved) {
-                return res.status(403).send({
-                    error: true,
-                    message: 'Cannot update reserved command',
-                    status: 403
-                });
+            const updatePayload = { ...body };
+
+            if (command.reserved && 'message' in updatePayload) {
+                delete updatePayload.message;
+            }
+
+            if (command.reserved && 'description' in updatePayload) {
+                delete updatePayload.description;
             }
 
             const updatedCommand = await CommandsSchema.findOneAndUpdate(
                 { channelID: channelIdStr, _id: commandIdStr },
-                body,
+                updatePayload,
                 { new: true }
             );
 
@@ -193,10 +237,19 @@ router.put('/:channelID/:commandID', authMiddleware as any, async (req: Request,
 
             await cacheClient.del(`${channelIdStr}:commands:${updatedCommand.cmd}`);
 
+            const commandResponse = updatedCommand.toObject();
+            if (commandResponse.reserved) {
+                commandResponse.description = getLocalizedReservedCommandDescription(
+                    commandResponse,
+                    language,
+                    commandResponse.description || ''
+                );
+            }
+
             res.send({
                 error: false,
                 message: 'Command updated',
-                command: updatedCommand,
+                command: commandResponse,
                 status: 200
             });
         } catch (error) {

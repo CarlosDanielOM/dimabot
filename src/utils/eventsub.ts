@@ -4,11 +4,38 @@ import { getAppToken } from './tokens.js';
 import TwitchStreamers from '../classes/twitch_streamers.class.js';
 import EventsubSchema, { type IEventsub, type ICondition } from '../schemas/eventsub.schema.js';
 
+type EventsubConfig = Partial<Pick<IEventsub, 'enabled' | 'message' | 'endMessage' | 'endEnabled' | 'clipEnabled' | 'minViewers' | 'delay' | 'cheerTiers'>>;
+
+export const CANONICAL_BITS_EVENT_TYPE = 'channel.bits.use';
+export const LEGACY_BITS_EVENT_TYPES = ['channel.cheer', 'channel.bit.use'] as const;
+
+export function isLegacyBitsEventType(type: string): type is (typeof LEGACY_BITS_EVENT_TYPES)[number] {
+    return LEGACY_BITS_EVENT_TYPES.includes(type as (typeof LEGACY_BITS_EVENT_TYPES)[number]);
+}
+
+export function isBitsEventType(type: string): boolean {
+    return type === CANONICAL_BITS_EVENT_TYPE || isLegacyBitsEventType(type);
+}
+
+export function canonicalizeEventsubType(type: string): string {
+    return isLegacyBitsEventType(type) ? CANONICAL_BITS_EVENT_TYPE : type;
+}
+
+export function getEquivalentEventsubTypes(type: string): string[] {
+    const canonicalType = canonicalizeEventsubType(type);
+
+    if (canonicalType === CANONICAL_BITS_EVENT_TYPE) {
+        return [CANONICAL_BITS_EVENT_TYPE, ...LEGACY_BITS_EVENT_TYPES];
+    }
+
+    return [canonicalType];
+}
+
 export interface SubscriptionType {
     type: string;
     version: string;
     condition: ICondition;
-    config?: Partial<Pick<IEventsub, 'message' | 'endMessage' | 'endEnabled' | 'clipEnabled' | 'minViewers' | 'delay' | 'cheerTiers'>>;
+    config?: EventsubConfig;
 }
 
 export interface SubscribeTwitchEventResponse {
@@ -33,7 +60,84 @@ export interface SubscribeTwitchEventError {
     status: number;
 }
 
+export interface BitsEventsubMigrationResult {
+    canonicalEventsub: IEventsub | null;
+    hadCanonicalBeforeMigration: boolean;
+    hadLegacyBeforeMigration: boolean;
+    createdCanonical: boolean;
+    removedLegacyCount: number;
+    errors: string[];
+}
+
 const MOD_ID = '698614112';
+
+function sortValueDeep(value: unknown): unknown {
+    if (Array.isArray(value)) {
+        return value.map(sortValueDeep);
+    }
+
+    if (value && typeof value === 'object') {
+        return Object.keys(value as Record<string, unknown>)
+            .sort()
+            .reduce<Record<string, unknown>>((acc, key) => {
+                acc[key] = sortValueDeep((value as Record<string, unknown>)[key]);
+                return acc;
+            }, {});
+    }
+
+    return value;
+}
+
+function serializeCondition(condition: ICondition): string {
+    return JSON.stringify(sortValueDeep((condition || {}) as Record<string, unknown>));
+}
+
+function toEventsubResponse(eventsub: Partial<IEventsub> & { _id?: unknown }): SubscribeTwitchEventResponse {
+    return {
+        _id: eventsub._id ? String(eventsub._id) : undefined,
+        id: String(eventsub.id || ''),
+        status: String(eventsub.status || ''),
+        type: String(eventsub.type || ''),
+        version: String(eventsub.version || ''),
+        condition: (eventsub.condition || {}) as ICondition,
+        created_at: String(eventsub.created_at || ''),
+        transport: eventsub.transport || {
+            method: '',
+            callback: ''
+        },
+        cost: Number(eventsub.cost || 0),
+        channel: String(eventsub.channel || ''),
+        channelID: String(eventsub.channelID || ''),
+        enabled: Boolean(eventsub.enabled),
+        message: String(eventsub.message || ''),
+        endMessage: String(eventsub.endMessage || ''),
+        endEnabled: Boolean(eventsub.endEnabled),
+        minViewers: Number(eventsub.minViewers || 0),
+        temporalBanMessage: String(eventsub.temporalBanMessage || ''),
+        clipEnabled: Boolean(eventsub.clipEnabled),
+        delay: Number(eventsub.delay || 0),
+        cheerTiers: Array.isArray(eventsub.cheerTiers) ? eventsub.cheerTiers : [],
+        todayFollows: eventsub.todayFollows,
+    };
+}
+
+async function findExistingEventsub(
+    channelID: string,
+    type: string,
+    version: string,
+    condition: ICondition
+): Promise<(Partial<IEventsub> & { _id?: unknown }) | null> {
+    const conditionKey = serializeCondition(condition);
+    const existingEventsubs = await EventsubSchema.find({ channelID, type, version }).lean();
+
+    for (const eventsub of existingEventsubs) {
+        if (serializeCondition((eventsub.condition || {}) as ICondition) === conditionKey) {
+            return eventsub as Partial<IEventsub> & { _id?: unknown };
+        }
+    }
+
+    return null;
+}
 
 export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
     {
@@ -82,7 +186,7 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
             to_broadcaster_user_id: '698614112'
         },
         config: {
-            message: '$(twitch.channel) is raiding with $(raid.viewers) viewers!',
+            message: '$(raid.channel) is raiding with $(raid.viewers) viewers!',
             clipEnabled: true
         }
     },
@@ -161,16 +265,6 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
         }
     },
     {
-        type: 'channel.cheer',
-        version: '1',
-        condition: {
-            broadcaster_user_id: '698614112'
-        },
-        config: {
-            message: '$(user) cheered $(cheer.amount) bits!'
-        }
-    },
-    {
         type: 'channel.subscribe',
         version: '1',
         condition: {
@@ -208,10 +302,13 @@ export const SUBSCRIPTION_TYPES: SubscriptionType[] = [
         }
     },
     {
-        type: 'channel.bits.use',
+        type: CANONICAL_BITS_EVENT_TYPE,
         version: '1',
         condition: {
             broadcaster_user_id: '698614112'
+        },
+        config: {
+            message: '$(user) cheered $(cheer.amount) bits!'
         }
     },
     {
@@ -228,7 +325,7 @@ export async function subscribeTwitchEvent(
     type: string,
     version: string,
     condition: ICondition,
-    config?: Partial<Pick<IEventsub, 'message' | 'endMessage' | 'endEnabled' | 'clipEnabled' | 'minViewers' | 'delay' | 'cheerTiers'>>
+    config?: EventsubConfig
 ): Promise<SubscribeTwitchEventResponse | SubscribeTwitchEventError> {
     const streamer = await TwitchStreamers.getTwitchAccountById(channelID);
     if (!streamer) {
@@ -237,6 +334,11 @@ export async function subscribeTwitchEvent(
             message: 'Streamer not found',
             status: 404
         };
+    }
+
+    const existingEventsub = await findExistingEventsub(channelID, type, version, condition);
+    if (existingEventsub?.id) {
+        return toEventsubResponse(existingEventsub);
     }
 
     const streamerHeaderResult = await getTwitchStreamerHeaderById(channelID);
@@ -288,7 +390,7 @@ export async function subscribeTwitchEvent(
 
     const subscriptionData = data.data[0];
 
-    const newEventSub = new EventsubSchema({
+    const eventsubPayload = {
         id: subscriptionData.id,
         status: subscriptionData.status,
         type: subscriptionData.type,
@@ -299,37 +401,24 @@ export async function subscribeTwitchEvent(
         cost: subscriptionData.cost,
         channel: streamer.name,
         channelID: channelID
-    });
-
-    if (config) {
-        Object.assign(newEventSub, config);
-    }
-
-    await newEventSub.save();
-
-    return {
-        _id: newEventSub._id.toString(),
-        id: newEventSub.id,
-        status: newEventSub.status,
-        type: newEventSub.type,
-        version: newEventSub.version,
-        condition: newEventSub.condition,
-        created_at: newEventSub.created_at,
-        transport: newEventSub.transport,
-        cost: newEventSub.cost,
-        channel: newEventSub.channel,
-        channelID: newEventSub.channelID,
-        enabled: newEventSub.enabled,
-        message: newEventSub.message,
-        endMessage: newEventSub.endMessage,
-        endEnabled: newEventSub.endEnabled,
-        minViewers: newEventSub.minViewers,
-        temporalBanMessage: newEventSub.temporalBanMessage,
-        clipEnabled: newEventSub.clipEnabled,
-        delay: newEventSub.delay,
-        cheerTiers: newEventSub.cheerTiers,
-        todayFollows: newEventSub.todayFollows,
     };
+
+    const newEventSub = await EventsubSchema.findOneAndUpdate(
+        { id: subscriptionData.id },
+        {
+            $set: {
+                ...eventsubPayload,
+                ...(config || {})
+            }
+        },
+        {
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true
+        }
+    ).lean();
+
+    return toEventsubResponse((newEventSub || eventsubPayload) as Partial<IEventsub> & { _id?: unknown });
 }
 
 export async function getEventsubs(): Promise<any> {
@@ -384,4 +473,140 @@ export async function unsubscribeTwitchEvent(id: string): Promise<Response | any
     }
 
     return data;
+}
+
+function resolveBitsEventsubConfigValue<K extends keyof EventsubConfig>(
+    canonical: Partial<IEventsub> | null,
+    legacy: Partial<IEventsub> | null,
+    key: K
+): EventsubConfig[K] | undefined {
+    const canonicalValue = canonical?.[key] as EventsubConfig[K] | undefined;
+    const legacyValue = legacy?.[key] as EventsubConfig[K] | undefined;
+
+    const isCustomValue = (value: EventsubConfig[K] | undefined): boolean => {
+        switch (key) {
+            case 'enabled':
+                return value === false;
+            case 'message':
+            case 'endMessage':
+                return typeof value === 'string' && value.trim().length > 0;
+            case 'endEnabled':
+            case 'clipEnabled':
+                return value === true;
+            case 'minViewers':
+                return typeof value === 'number' && Number.isFinite(value) && value !== 2;
+            case 'delay':
+                return typeof value === 'number' && Number.isFinite(value) && value !== 0;
+            case 'cheerTiers':
+                return Array.isArray(value) && value.length > 0;
+            default:
+                return false;
+        }
+    };
+
+    const canonicalHasCustomValue = isCustomValue(canonicalValue);
+    const legacyHasCustomValue = isCustomValue(legacyValue);
+
+    if (canonicalHasCustomValue) {
+        return canonicalValue;
+    }
+
+    if (legacyHasCustomValue) {
+        return legacyValue;
+    }
+
+    return canonicalValue ?? legacyValue;
+}
+
+function buildBitsEventsubConfig(
+    canonical: Partial<IEventsub> | null,
+    legacy: Partial<IEventsub> | null
+): EventsubConfig {
+    const config: EventsubConfig = {
+        enabled: resolveBitsEventsubConfigValue(canonical, legacy, 'enabled'),
+        message: resolveBitsEventsubConfigValue(canonical, legacy, 'message'),
+        endMessage: resolveBitsEventsubConfigValue(canonical, legacy, 'endMessage'),
+        endEnabled: resolveBitsEventsubConfigValue(canonical, legacy, 'endEnabled'),
+        clipEnabled: resolveBitsEventsubConfigValue(canonical, legacy, 'clipEnabled'),
+        minViewers: resolveBitsEventsubConfigValue(canonical, legacy, 'minViewers'),
+        delay: resolveBitsEventsubConfigValue(canonical, legacy, 'delay'),
+        cheerTiers: resolveBitsEventsubConfigValue(canonical, legacy, 'cheerTiers'),
+    };
+
+    return Object.fromEntries(
+        Object.entries(config).filter(([, value]) => typeof value !== 'undefined')
+    ) as EventsubConfig;
+}
+
+export async function migrateLegacyBitsEventsubs(channelID: string): Promise<BitsEventsubMigrationResult> {
+    const [canonicalEventsub, legacyEventsubs] = await Promise.all([
+        EventsubSchema.findOne({ channelID, type: CANONICAL_BITS_EVENT_TYPE }).lean(),
+        EventsubSchema.find({ channelID, type: { $in: LEGACY_BITS_EVENT_TYPES } }).lean()
+    ]);
+    const typedCanonicalEventsub = canonicalEventsub as (Partial<IEventsub> & { _id?: unknown }) | null;
+
+    const result: BitsEventsubMigrationResult = {
+        canonicalEventsub: typedCanonicalEventsub as IEventsub | null,
+        hadCanonicalBeforeMigration: Boolean(typedCanonicalEventsub),
+        hadLegacyBeforeMigration: legacyEventsubs.length > 0,
+        createdCanonical: false,
+        removedLegacyCount: 0,
+        errors: []
+    };
+
+    if (legacyEventsubs.length === 0) {
+        return result;
+    }
+
+    const legacyConfigSource = legacyEventsubs.find((eventsub) => {
+        return Boolean(
+            (typeof eventsub.message === 'string' && eventsub.message.trim().length > 0)
+            || (Array.isArray(eventsub.cheerTiers) && eventsub.cheerTiers.length > 0)
+            || eventsub.enabled === false
+        );
+    }) || legacyEventsubs[0];
+
+    const mergedConfig = buildBitsEventsubConfig(
+        typedCanonicalEventsub as Partial<IEventsub> | null,
+        legacyConfigSource as Partial<IEventsub> | null
+    );
+
+    let currentCanonicalEventsub = typedCanonicalEventsub;
+
+    if (!currentCanonicalEventsub) {
+        const createResult = await subscribeTwitchEvent(
+            channelID,
+            CANONICAL_BITS_EVENT_TYPE,
+            '1',
+            { broadcaster_user_id: channelID },
+            mergedConfig
+        );
+
+        if ('error' in createResult) {
+            result.errors.push(createResult.message || 'Failed to create canonical bits eventsub');
+            return result;
+        }
+
+        currentCanonicalEventsub = await EventsubSchema.findOne({ channelID, type: CANONICAL_BITS_EVENT_TYPE }).lean() as IEventsub | null;
+        result.createdCanonical = true;
+    } else {
+        currentCanonicalEventsub = await EventsubSchema.findOneAndUpdate(
+            { _id: currentCanonicalEventsub._id },
+            { $set: mergedConfig },
+            { new: true }
+        ).lean() as IEventsub | null;
+    }
+
+    for (const legacyEventsub of legacyEventsubs) {
+        const unsubscribeResult = await unsubscribeTwitchEvent(legacyEventsub.id);
+        if ((unsubscribeResult as { error?: unknown })?.error) {
+            result.errors.push(`Failed to remove ${legacyEventsub.type}`);
+            continue;
+        }
+
+        result.removedLegacyCount += 1;
+    }
+
+    result.canonicalEventsub = currentCanonicalEventsub as IEventsub | null;
+    return result;
 }

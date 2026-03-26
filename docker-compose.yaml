@@ -14,6 +14,9 @@ services:
     command: node dist/server/index.js
     restart: always
     env_file: .env
+    environment:
+      PIPER_HTTP_URL: http://piper-tts:5000
+      PUBLIC_API_URL: https://api.domdimabot.com
     networks:
       - web-proxy
       - databases
@@ -33,6 +36,9 @@ services:
     command: node dist/bot/index.js
     restart: always
     env_file: .env
+    environment:
+      INTERNAL_API_URL: http://dima-server:3000
+      PUBLIC_API_URL: https://api.domdimabot.com
     networks:
       - web-proxy
       - databases
@@ -56,8 +62,25 @@ services:
       - web-proxy
       - databases
 
+  # =========================================
+  # SERVICE 4: PIPER HTTP TTS
+  # =========================================
+  piper-tts:
+    build:
+      context: .
+      dockerfile: dockerfile.piper
+    container_name: piper-tts
+    restart: always
+    networks:
+      - databases
+    volumes:
+      - piper-data:/voices
+
 networks:
   web-proxy:
     external: true
   databases:
     external: true
+
+volumes:
+  piper-data:

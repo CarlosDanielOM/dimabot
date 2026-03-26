@@ -1,10 +1,11 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response } from "express";
 import cors from "cors";
-import fs from "fs";
 import path from "path";
 import { getDirname } from "../utils/pollyfills.js";
 import { fileRoute } from "./routes/file.route.js";
+import { mediaRoute } from './routes/media.route.js';
 import { clipRoute } from "./routes/clip.route.js";
+import { speechRoute } from "./routes/speech.route.js";
 import { userRoute } from "./routes/user.route.js";
 import { adminRoute } from "./routes/admin.route.js";
 import { referralRoute } from "./routes/referral.route.js";
@@ -20,6 +21,10 @@ import { polarshWebhook } from "./routes/webhooks/polarsh.webhook.js";
 import { billingRoute } from "./routes/billing.route.js";
 import { dashboardRoute } from "./routes/dashboard.route.js";
 import { adminSiteRoute } from "./routes/admin_site.route.js";
+import { analyticsRoute } from "./routes/analytics.route.js";
+import { timerRoute } from "./routes/timer.route.js";
+import { getSiteAnalyticsSnapshot } from "../utils/siteanalytics.js";
+import { getReservedCommandsPayload } from "./services/command_defaults.service.js";
 
 const __dirname = getDirname(import.meta.url);
 
@@ -38,8 +43,14 @@ export const server = async (): Promise<Express.Application> => {
         // Setup file routes
         app.use('/video', fileRoute);
 
+        // Setup media routes
+        app.use('/media', mediaRoute);
+
         // Setup clip routes
         app.use('/clip', clipRoute);
+
+        // Setup speech routes
+        app.use('/speech', speechRoute);
 
         // Setup auth routes
         app.use('/auth', authRoute);
@@ -80,6 +91,12 @@ export const server = async (): Promise<Express.Application> => {
         // Setup dashboard routes
         app.use('/dashboard', dashboardRoute);
 
+        // Setup analytics routes
+        app.use('/analytics', analyticsRoute);
+
+        // Setup timers routes
+        app.use('/timers', timerRoute);
+
         // Setup internal admin site routes
         app.use('/admin-site', adminSiteRoute);
 
@@ -88,9 +105,8 @@ export const server = async (): Promise<Express.Application> => {
         //? Webhooks Endpoints
         
         app.get('/config/commands/reserved', (req, res) => {
-
-            const rawData = fs.readFileSync(path.join(__dirname, '..', 'config', 'commands', 'reservedcommands.json'), 'utf8');
-            const data = JSON.parse(rawData);
+            const language = typeof req.query.language === 'string' ? req.query.language : undefined;
+            const data = getReservedCommandsPayload(language);
             
             res.status(200).json({
                 error: false,
@@ -98,6 +114,84 @@ export const server = async (): Promise<Express.Application> => {
                 status: 200,
                 data: data
             });
+        });
+
+        app.get('/config/site/analytics', async (_req: Request, res: Response) => {
+            try {
+                const snapshot = await getSiteAnalyticsSnapshot();
+
+                return res.status(200).json({
+                    error: false,
+                    message: 'Site analytics fetched successfully',
+                    status: 200,
+                    data: snapshot
+                });
+            } catch (error) {
+                console.error('Error in GET /config/site/analytics:', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                    timestamp: new Date().toISOString()
+                });
+
+                return res.status(500).json({
+                    error: true,
+                    message: 'Internal server error',
+                    status: 500
+                });
+            }
+        });
+
+        app.get('/config/site/analytics/stream', async (_req: Request, res: Response) => {
+            try {
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders();
+
+                const sendSnapshot = async (): Promise<void> => {
+                    const snapshot = await getSiteAnalyticsSnapshot();
+                    res.write(`data: ${JSON.stringify(snapshot)}\n\n`);
+                };
+
+                await sendSnapshot();
+
+                const interval = setInterval(() => {
+                    void sendSnapshot().catch((error) => {
+                        console.error('Error sending SSE analytics snapshot:', {
+                            error: error instanceof Error ? error.message : String(error),
+                            timestamp: new Date().toISOString()
+                        });
+                    });
+                }, 500);
+                interval.unref?.();
+
+                const heartbeat = setInterval(() => {
+                    res.write(': keep-alive\n\n');
+                }, 30000);
+                heartbeat.unref?.();
+
+                res.on('close', () => {
+                    clearInterval(interval);
+                    clearInterval(heartbeat);
+                    res.end();
+                });
+            } catch (error) {
+                console.error('Error in GET /config/site/analytics/stream:', {
+                    error: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : undefined,
+                    timestamp: new Date().toISOString()
+                });
+
+                if (!res.headersSent) {
+                    return res.status(500).json({
+                        error: true,
+                        message: 'Internal server error',
+                        status: 500
+                    });
+                }
+
+                res.end();
+            }
         });
 
         return app;

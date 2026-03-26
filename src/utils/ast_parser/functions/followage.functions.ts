@@ -2,8 +2,8 @@ import type { ExecutionContext } from '../types.js';
 import { registerFunction, type FunctionHandler } from '../evaluator.js';
 import * as UserFunctions from '../../../functions/users/index.js';
 import TwitchStreamers from '../../../classes/twitch_streamers.class.js';
-import { getTwitchStreamerHeaderById } from '../../../utils/header.js';
 import { getTwitchHelixUrl } from '../../../utils/links.js';
+import { executeHelixStreamerRequestWith401Retry } from '../../twitch_helix_retry.js';
 
 const followageHandler: FunctionHandler = async (args, ctx) => {
     const eventData = ctx.eventData as Record<string, unknown> | undefined;
@@ -30,12 +30,19 @@ const followageHandler: FunctionHandler = async (args, ctx) => {
         params.append('broadcaster_id', ctx.broadcasterId);
         params.append('user_id', userResult.data.id);
         
-        const streamerHeaderResult = await getTwitchStreamerHeaderById(ctx.broadcasterId);
-        if (streamerHeaderResult.error || !streamerHeaderResult.header) return '';
-        
-        const response = await fetch(getTwitchHelixUrl('channels/followers', params.toString()), {
-            headers: streamerHeaderResult.header as unknown as Record<string, string>
+        const request = await executeHelixStreamerRequestWith401Retry({
+            worker: 'ast_parser',
+            operation: 'followage_function',
+            channelID: ctx.broadcasterId,
+            context: { userId: userResult.data.id },
+            executeRequest: async (headers) => fetch(getTwitchHelixUrl('channels/followers', params.toString()), {
+                headers
+            })
         });
+
+        if (request.error || !request.response) return '';
+
+        const response = request.response;
         
         const data = await response.json();
         

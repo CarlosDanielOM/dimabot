@@ -2,10 +2,11 @@ import express, { type Request, type Response } from 'express';
 import TwitchStreamers from '../../classes/twitch_streamers.class.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { AdminSchema } from '../../schemas/admin.schema.js';
+import { FollowRelationshipLedgerSchema } from '../../schemas/follow_relationship_ledger.schema.js';
+import { StreamSubscriptionLedgerSchema } from '../../schemas/stream_subscription_ledger.schema.js';
 import UsersSchema from '../../schemas/users.schema.js';
-import { getTwitchAppHeader } from '../../utils/header.js';
-import { getTwitchHelixUrl } from '../../utils/links.js';
-import { getDashboardAnalytics } from '../../utils/stream_analytics.js';
+import { getCachedLiveStatus } from '../../utils/siteanalytics.js';
+import { getDashboardAnalytics, getLiveSessionMetrics } from '../../utils/stream_analytics.js';
 
 interface DashboardRequest extends Request {
     user?: {
@@ -28,28 +29,37 @@ function normalizePlanTier(planTier: string | undefined): PlanTier {
 
 const router = express.Router();
 
-async function getLiveStatus(channelID: string): Promise<{ isLive: boolean; stream?: any }> {
-    const appHeader = await getTwitchAppHeader();
-    const params = new URLSearchParams({ user_id: channelID });
-
-    const response = await fetch(getTwitchHelixUrl('streams', params.toString()), {
-        headers: {
-            'Client-Id': appHeader['Client-Id'],
-            'Authorization': appHeader.Authorization,
-            'Content-Type': appHeader['Content-Type']
-        }
+async function getLiveStatus(channelID: string): Promise<{ isLive: boolean; stream: Record<string, unknown> | null; liveSession: Awaited<ReturnType<typeof getLiveSessionMetrics>> }> {
+    const live = await getCachedLiveStatus(channelID);
+    const currentViewers = live.stream?.viewer_count ?? 0;
+    const liveSession = await getLiveSessionMetrics(channelID, {
+        currentViewers
     });
 
-    if (!response.ok) {
-        return { isLive: false };
+    if (!live.isLive || !live.stream) {
+        return {
+            isLive: false,
+            stream: null,
+            liveSession: null
+        };
     }
 
-    const data = await response.json();
-    const stream = Array.isArray(data.data) && data.data.length > 0 ? data.data[0] : null;
-
     return {
-        isLive: Boolean(stream),
-        stream: stream || undefined
+        isLive: true,
+        stream: {
+            id: '',
+            user_id: channelID,
+            user_login: '',
+            user_name: '',
+            game_name: live.stream.game_name || '',
+            title: live.stream.title || '',
+            viewer_count: currentViewers,
+            started_at: live.stream.started_at || '',
+            language: '',
+            thumbnail_url: '',
+            is_mature: false
+        },
+        liveSession
     };
 }
 
@@ -200,7 +210,8 @@ router.get('/:channelID/live-status', authMiddleware as any, async (req: Dashboa
                 isLive: live.isLive,
                 role: access.role,
                 checkedAt: new Date().toISOString(),
-                stream: live.stream || null
+                stream: live.stream,
+                liveSession: live.liveSession
             }
         });
     } catch (error) {
@@ -252,10 +263,23 @@ router.get('/:channelID/bootstrap', authMiddleware as any, async (req: Dashboard
             });
         }
 
-        const analytics = await getDashboardAnalytics(channelIdStr, 30);
-        const live = await getLiveStatus(channelIdStr);
         const cacheChatEnabled = streamer.chat_enabled === 'true';
-        const chatEnabled = await getChannelChatEnabled(channelIdStr, cacheChatEnabled);
+        const [analytics, live, chatEnabled, totalFollowers, totalSubs] = await Promise.all([
+            getDashboardAnalytics(channelIdStr, 30),
+            getLiveStatus(channelIdStr),
+            getChannelChatEnabled(channelIdStr, cacheChatEnabled),
+            FollowRelationshipLedgerSchema.countDocuments({
+                followed_id: channelIdStr,
+                status: 'active'
+            }),
+            StreamSubscriptionLedgerSchema.countDocuments({
+                streamer_id: channelIdStr,
+                status: 'active'
+            })
+        ]);
+
+        const followersGoal = 1000;
+        const subsGoal = 1000;
 
         return res.status(200).json({
             error: false,
@@ -270,9 +294,18 @@ router.get('/:channelID/bootstrap', authMiddleware as any, async (req: Dashboard
                 },
                 isLive: live.isLive,
                 liveStream: live.stream || null,
+                liveSession: live.liveSession,
                 kpis: analytics.kpis,
                 trend: analytics.trend,
-                streamHistory: analytics.streamHistory
+                streamHistory: analytics.streamHistory,
+                totalFollowers,
+                totalSubs,
+                monthlyGoals: {
+                    followersGoal,
+                    followersCurrent: totalFollowers,
+                    subsGoal,
+                    subsCurrent: totalSubs
+                }
             }
         });
     } catch (error) {

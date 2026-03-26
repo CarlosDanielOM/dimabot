@@ -1,46 +1,32 @@
 import { Server as SocketIOServer } from "socket.io";
-import type { Socket as SocketIOSocket } from "socket.io";
 import http, { type Server as HttpServer } from "http";
-import fs from "fs";
-import path from "path";
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
 
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import { clipQueueHandler } from "../handlers/clip_queue.handler.js";
-import { getDirname } from "../utils/pollyfills.js";
-import { getSiteAnalytics } from "../utils/siteanalytics.js";
-import { pubSubManager } from "../classes/pubsub_manager.class.js";
-import { getTwitchAppHeader } from "../utils/header.js";
-import { getTwitchHelixUrl } from "../utils/links.js";
+import { ttsQueueHandler } from "../handlers/tts_queue.handler.js";
+import { getCachedLiveStatus, getSiteAnalytics } from "../utils/siteanalytics.js";
+import { getLiveSessionMetrics } from "../utils/stream_analytics.js";
 
-const __dirname = getDirname(import.meta.url);
+const DASHBOARD_LIVE_STATUS_INTERVAL_MS = Math.max(1000, Number(process.env.DASHBOARD_LIVE_STATUS_INTERVAL_MS || 1000));
 
 let io: SocketIOServer | null = null;
 let cacheClient: Awaited<ReturnType<typeof getDragonflyClient>> | null = null;
 const disconnectTimeouts = new Map<string, NodeJS.Timeout>();
 
-async function getChannelLiveStatus(channelID: string): Promise<boolean> {
+async function getChannelLiveStatus(channelID: string): Promise<{ isLive: boolean; currentViewers: number }> {
     try {
-        const appHeader = await getTwitchAppHeader();
-        const params = new URLSearchParams({ user_id: channelID });
-
-        const response = await fetch(getTwitchHelixUrl('streams', params.toString()), {
-            headers: {
-                'Client-Id': appHeader['Client-Id'],
-                'Authorization': appHeader.Authorization,
-                'Content-Type': appHeader['Content-Type']
-            }
-        });
-
-        if (!response.ok) {
-            return false;
-        }
-
-        const data = await response.json();
-        return Array.isArray(data.data) && data.data.length > 0;
+        const live = await getCachedLiveStatus(channelID);
+        return {
+            isLive: live.isLive,
+            currentViewers: Number(live.stream?.viewer_count || 0)
+        };
     } catch (error) {
         console.error(`Error fetching live status for ${channelID}:`, error);
-        return false;
+        return {
+            isLive: false,
+            currentViewers: 0
+        };
     }
 }
 
@@ -181,20 +167,28 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
             console.log(`${account.name} (${channelID}) connected to dashboard`);
 
             const initialLiveStatus = await getChannelLiveStatus(channelID);
+            const initialLiveSession = await getLiveSessionMetrics(channelID, {
+                currentViewers: initialLiveStatus.currentViewers
+            });
             socket.emit('dashboard-snapshot', {
                 channelID,
                 connectedAt: new Date().toISOString(),
-                isLive: initialLiveStatus
+                isLive: initialLiveStatus.isLive,
+                liveSession: initialLiveSession
             });
 
             const liveStatusInterval = setInterval(async () => {
-                const isLive = await getChannelLiveStatus(channelID);
+                const liveStatus = await getChannelLiveStatus(channelID);
+                const liveSession = await getLiveSessionMetrics(channelID, {
+                    currentViewers: liveStatus.currentViewers
+                });
                 socket.emit('stream-status', {
                     channelID,
-                    isLive,
-                    checkedAt: new Date().toISOString()
+                    isLive: liveStatus.isLive,
+                    checkedAt: new Date().toISOString(),
+                    liveSession
                 });
-            }, 45000);
+            }, DASHBOARD_LIVE_STATUS_INTERVAL_MS);
 
             socket.on('dashboard-ping', () => {
                 socket.emit('dashboard-pong', {
@@ -244,8 +238,10 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
 
                 const timeout = setTimeout(async () => {
                     const namespace = io?.of(`/overlays/triggers/${channelID}`);
+
                     if (namespace) {
                         const sockets = await namespace.fetchSockets();
+
                         if (sockets.length === 0) {
                             await cacheClient!.del(`twitch:${channelID}:triggers:connected`);
                             console.log(`${channelID} trigger connection removed (10s timeout)`);
@@ -260,7 +256,7 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
             });
         });
 
-        //? Speech Namespace with Pub/Sub Queue
+        //? Speech Namespace
         io.of(/^\/speech\/\w+$/).on('connection', async (socket) => {
             const channelID = socket.nsp.name.split('/')[2];
 
@@ -281,52 +277,20 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                 console.log(`${channelID} reconnected to speech, cleared disconnect timeout`);
             }
 
-            // Cleanup old processing flag
-            try {
-                await cacheClient!.del(`twitch:${channelID}:speech:processing`);
-            } catch (error) {
-                console.error(`Error deleting old processing flag for speech ${channelID}:`, error);
-            }
-
-            // Set connection flag
-            await cacheClient!.set(`twitch:${channelID}:speech:connected`, "true");
+            await cacheClient!.set(`twitch:${channelID}:tts:connected`, "true");
             console.log(`${account.name} (${channelID}) connected to speech`);
 
-            // Subscribe to speech requests for this channel
-            await pubSubManager.subscribe(`twitch:${channelID}:speech:request`, async (data) => {
-                // data structure: { speechID, text, lang, timestamp }
-                try {
-                    // Verify ID in queue (defensive)
-                    const idExists = await cacheClient!.zRank(`twitch:${channelID}:speech:queue`, data.speechID);
-                    if (!idExists) {
-                        await cacheClient!.zAdd(`twitch:${channelID}:speech:queue`, {
-                            score: data.timestamp,
-                            value: data.speechID
-                        });
-                        await cacheClient!.set(
-                            `twitch:${channelID}:speech:queue:data:${data.speechID}`,
-                            JSON.stringify(data)
-                        );
-                    }
-
-                    // Check if currently processing
-                    const isProcessing = await cacheClient!.exists(`twitch:${channelID}:speech:processing`);
-
-                    // If not processing, start this one
-                    if (!isProcessing) {
-                        await cacheClient!.set(`twitch:${channelID}:speech:processing`, "true");
-                        io!.of(`/speech/${channelID}`).emit('speech', {
-                            id: data.speechID
-                        });
-                    }
-                } catch (error) {
-                    console.error(`Error processing speech request for ${channelID}:`, error);
+            const isProcessing = await cacheClient!.exists(`twitch:${channelID}:tts:processing`);
+            if (!isProcessing) {
+                const queueLength = await cacheClient!.zCard(`twitch:${channelID}:tts:queue`);
+                if (queueLength > 0) {
+                    void ttsQueueHandler.processNext(channelID);
                 }
-            });
+            }
 
             // Handle speech-ended event from overlay
-            socket.on('speech-ended', async (data: { speechID?: string }) => {
-                await handleSpeechEnded(channelID, data.speechID);
+            socket.on('speech-ended', async (data: { speechID?: string, channelID?: string }) => {
+                await ttsQueueHandler.handleSpeechEnded(data.channelID || channelID, data.speechID);
             });
 
             // Handle disconnect with 5s delay
@@ -338,7 +302,7 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                     if (namespace) {
                         const sockets = await namespace.fetchSockets();
                         if (sockets.length === 0) {
-                            await cacheClient!.del(`twitch:${channelID}:speech:connected`);
+                            await cacheClient!.del(`twitch:${channelID}:tts:connected`);
                             console.log(`${channelID} speech connection removed (5s timeout)`);
                         } else {
                             console.log(`${channelID} has ${sockets.length} active speech socket(s), keeping connection flag`);
@@ -350,35 +314,6 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                 disconnectTimeouts.set(`speech:${channelID}`, timeout);
             });
         });
-
-        // Helper function to handle speech ended
-        async function handleSpeechEnded(channelID: string, currentSpeechID?: string) {
-            try {
-                // Cleanup
-                await cacheClient!.del(`twitch:${channelID}:speech:processing`);
-                if (currentSpeechID) {
-                    await cacheClient!.del(`twitch:${channelID}:speech:queue:data:${currentSpeechID}`);
-                }
-
-                // Get next from queue
-                const nextID = await cacheClient!.zPopMin(`twitch:${channelID}:speech:queue`);
-
-                // Process next if exists
-                if (nextID) {
-                    const nextData = await cacheClient!.get(`twitch:${channelID}:speech:queue:data:${nextID.value}`);
-                    if (nextData) {
-                        const parsedData = JSON.parse(nextData);
-
-                        await cacheClient!.set(`twitch:${channelID}:speech:processing`, "true");
-                        io!.of(`/speech/${channelID}`).emit('speech', {
-                            id: parsedData.speechID
-                        });
-                    }
-                }
-            } catch (error) {
-                console.error(`Error handling speech ended for ${channelID}:`, error);
-            }
-        }
 
         // Setup stale connection cleanup job - only clean up truly stale connections
         setInterval(async () => {
@@ -411,11 +346,11 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                     const speechSockets = await speechNamespace.fetchSockets();
 
                     if (speechSockets.length === 0) {
-                        const speechConnected = await cacheClient.exists(`twitch:${channel.id}:speech:connected`);
+                        const speechConnected = await cacheClient.exists(`twitch:${channel.id}:tts:connected`);
                         if (speechConnected) {
                             // Speech doesn't have heartbeat, so just check if flag exists with no active sockets
                             // Wait 60s before cleanup to allow for reconnection
-                            const speechKey = `twitch:${channel.id}:speech:last_cleanup`;
+                            const speechKey = `twitch:${channel.id}:tts:last_cleanup`;
                             const lastCleanup = await cacheClient.get(speechKey);
 
                             if (!lastCleanup) {
@@ -423,8 +358,8 @@ export const websocket = async (app: any): Promise<HttpServer | null> => {
                             } else {
                                 const timeSinceCleanup = Date.now() - parseInt(lastCleanup);
                                 if (timeSinceCleanup > 60000) {
-                                    await cacheClient.del(`twitch:${channel.id}:speech:connected`);
-                                    await cacheClient.del(`twitch:${channel.id}:speech:processing`);
+                                    await cacheClient.del(`twitch:${channel.id}:tts:connected`);
+                                    await cacheClient.del(`twitch:${channel.id}:tts:processing`);
                                     await cacheClient.del(speechKey);
                                     // console.log(`${channel.id} (${channel.name}) speech marked as inactive (no connections)`);
                                 }

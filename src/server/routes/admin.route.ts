@@ -248,6 +248,88 @@ router.get('/:channelID/search', authMiddleware as any, async (req: AdminRequest
         }
     });
 
+router.get('/:channelID/candidates', authMiddleware as any, async (req: AdminRequest, res: Response) => {
+        try {
+            const { channelID } = req.params;
+            const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
+            const requesterID = req.user?.id;
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unauthorized',
+                    status: 401
+                });
+            }
+
+            if (requesterID !== channelIdStr) {
+                return res.status(403).json({
+                    error: true,
+                    message: 'Only the channel owner can preload admin candidates',
+                    status: 403
+                });
+            }
+
+            const existingAdmins = await AdminSchema.find({ channelID: channelIdStr })
+                .select('adminID')
+                .lean();
+
+            const excludedIDs = new Set([
+                channelIdStr,
+                ...existingAdmins.map((admin) => admin.adminID).filter(Boolean)
+            ]);
+
+            const users = await UsersSchema.aggregate<Array<{ id: string; login: string; display_name: string }>>([
+                { $unwind: '$accounts' },
+                {
+                    $match: {
+                        'accounts.type': 'twitch',
+                        'accounts.id': { $nin: Array.from(excludedIDs) }
+                    }
+                },
+                {
+                    $project: {
+                        _id: 0,
+                        id: '$accounts.id',
+                        login: '$accounts.name',
+                        display_name: '$accounts.name'
+                    }
+                },
+                {
+                    $match: {
+                        id: { $ne: null },
+                        login: { $ne: null }
+                    }
+                },
+                {
+                    $sort: {
+                        login: 1
+                    }
+                }
+            ]);
+
+            return res.status(200).json({
+                error: false,
+                message: 'Admin candidates fetched successfully',
+                status: 200,
+                data: users
+            });
+        } catch (error) {
+            console.error('Error in GET /:channelID/candidates:', {
+                channelID: req.params.channelID,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            return res.status(500).json({
+                error: true,
+                message: 'Internal server error',
+                status: 500
+            });
+        }
+    });
+
 router.get('/:channelID/:adminID', authMiddleware as any, async (req: AdminRequest, res: Response) => {
         try {
             const { channelID, adminID } = req.params;

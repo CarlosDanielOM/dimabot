@@ -169,7 +169,49 @@ export async function AiResponse(
     // Handle missing personality (fallback)
     const effectivePersonality: IChannelAIPersonality = personality || {
         _id: undefined as any,
+        profiles: [],
+        activeProfileId: '',
         personality: `You are a friendly and playful Twitch chat moderator for this channel. You speak in Spanish by default but can adapt to other languages. You have a good sense of humor and enjoy interacting with chat users. You maintain a fun and engaging atmosphere while still being able to moderate when necessary.`,
+        personaMode: 'original',
+        personaReference: '',
+        tonePreset: 'balanced',
+        voiceProfile: {
+            tone: 'friendly and playful',
+            cadence: 'short and dynamic',
+            style: 'chat-native and expressive',
+            catchphrases: []
+        },
+        learningConfig: {
+            enabled: true,
+            autoConfirmEnabled: true,
+            autoConfirmThreshold: 0.82,
+            minMessageLength: 12,
+            maxPendingMemories: 250,
+            maxConfirmedMemories: 2000,
+            postStreamSummaryEnabled: true,
+            weeklyMaintenanceEnabled: true,
+            monthlyMaintenanceEnabled: true,
+            autoApplyCreates: true,
+            autoApplyEdits: true,
+            autoApplyArchives: true,
+            autoApplyPermanentDeletes: true,
+            summaryMinDurationMinutes: 20,
+            summaryMinChatMessages: 30,
+            createMinConfidence: 0.72,
+            editMinConfidence: 0.74,
+            archiveMinConfidence: 0.8,
+            deleteMinConfidence: 0.88,
+            maxActionsPerRun: 20,
+            maxDeletesPerRun: 5,
+            minMemoryAgeDaysForDelete: 30,
+            minUnusedDaysForDelete: 21
+        },
+        memoryPolicy: {
+            prioritizeRecentChat: true,
+            allowSensitiveMemories: false,
+            allowUserPreferenceMemories: true,
+            allowRunningJokes: true
+        },
         rules: ["Be respectful and friendly with users"],
         knownUsers: [
             {

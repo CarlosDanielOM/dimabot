@@ -1,12 +1,11 @@
 import express, { type Request, type Response } from "express";
 import { getDirname } from "../../utils/pollyfills.js";
-import UsersSchema, { type IUsers } from "../../schemas/users.schema.js";
+import UsersSchema, { type IUsers, type UserDocument } from "../../schemas/users.schema.js";
 import { CommandsSchema } from "../../schemas/commands.schema.js";
 import TwitchStreamers from "../../classes/twitch_streamers.class.js";
 import { addModerator } from "../../functions/channels/add_moderator.channel.js";
 import { encrypt } from "../../utils/crypto.js";
-import { SUBSCRIPTION_TYPES, subscribeTwitchEvent, unsubscribeTwitchEvent } from "../../utils/eventsub.js";
-import JSONCOMMANDS from "../../config/commands/reservedcommands.json" with { type: 'json' };
+import { SUBSCRIPTION_TYPES, migrateLegacyBitsEventsubs, subscribeTwitchEvent, unsubscribeTwitchEvent } from "../../utils/eventsub.js";
 import { incrementSiteAnalytics } from "../../utils/siteanalytics.js";
 import { ingestPolarSHEvent, getPolarShClient } from "../../utils/polarsh.js";
 import { applyReferralCode } from "../../utils/referral.js";
@@ -22,8 +21,10 @@ import { CountdownTimerConfigSchema } from "../../schemas/countdown_timer_config
 import { CommandTimerSchema } from "../../schemas/command_timer.schema.js";
 import { ChannelAIPersonalitySchema } from "../../schemas/channel_ai_personality.schema.js";
 import { CommandUserVariablesSchema } from "../../schemas/command_user_variables.schema.js";
-import type { AuthRequest } from "../../middleware/types.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import { ensureReservedCommands } from "../services/command_defaults.service.js";
+import { cleanupChannelMediaOwnership } from '../../utils/media_cleanup.js';
+import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 
 const __dirname = getDirname(import.meta.url);
 
@@ -42,6 +43,13 @@ interface LoginRequestBody {
     id?: string;
     email?: string;
     referralCode?: string;
+    language?: string;
+}
+
+interface ExchangeCodeRequestBody {
+    code?: string;
+    redirectUri?: string;
+    state?: string;
 }
 
 interface StandardResponse {
@@ -55,6 +63,45 @@ interface StandardResponse {
 interface AdminChannelSummary {
     channelID: string;
     channelName: string;
+}
+
+interface AuthenticatedUserSession {
+    twitch: {
+        id: string;
+        login: string;
+        display_name: string;
+        profile_image_url?: string;
+        email?: string;
+    };
+    app: {
+        name: string;
+        email: string;
+        language?: 'en' | 'es' | null;
+        plan_tier: string;
+        plan_tier_until?: Date | null;
+        actived: boolean;
+        chat_enabled: boolean;
+        twitch_user_id: string;
+        has_permissions: boolean;
+        up_to_date_permissions: boolean;
+        administrating: AdminChannelSummary[];
+    };
+}
+
+function resolvePersistedLanguage(language?: string | null): 'en' | 'es' {
+    return String(language || '').trim().toLowerCase() === 'es' ? 'es' : 'en';
+}
+
+function resolveSessionLanguage(language?: string | null): 'en' | 'es' | null {
+    if (language === 'en' || language === 'es') {
+        return language;
+    }
+
+    if (typeof language === 'string' && language.trim() !== '') {
+        return 'en';
+    }
+
+    return null;
 }
 
 async function getAdministratingChannels(adminID: string): Promise<AdminChannelSummary[]> {
@@ -83,43 +130,7 @@ async function getAdministratingChannels(adminID: string): Promise<AdminChannelS
 }
 
 async function createReservedCommands(channelID: string, channelName: string): Promise<void> {
-    const commands = JSONCOMMANDS.commands;
-
-    for (const command in commands) {
-        const commandData = commands[command];
-
-        const exists = await CommandsSchema.exists({
-            func: commandData.func,
-            channelID: channelID
-        });
-
-        if (exists) {
-            continue;
-        }
-
-        const newCommand = new CommandsSchema({
-            name: commandData.name,
-            cmd: commandData.cmd,
-            func: commandData.func,
-            type: commandData.type,
-            channel: channelName,
-            channelID: channelID,
-            cooldown: commandData.cooldown,
-            enabled: commandData.enabled,
-            userLevel: commandData.userLevel || 0,
-            userLevelName: commandData.userLevelName || 'everyone',
-            reserved: commandData.reserved,
-            message: '',
-            responses: [],
-            paused: false,
-            platform: 'twitch',
-            premiumRequired: false,
-            premiumLevelRequired: 0,
-            createdAt: new Date()
-        });
-
-        await newCommand.save();
-    }
+    await ensureReservedCommands(channelID, channelName);
 }
 
 async function subscribeAllEventSubs(channelID: string): Promise<void> {
@@ -146,31 +157,129 @@ async function subscribeAllEventSubs(channelID: string): Promise<void> {
     }
 }
 
-async function getUserByTwitchID(twitchID: string): Promise<IUsers | null> {
+async function getUserByTwitchID(twitchID: string): Promise<UserDocument | null> {
     return await UsersSchema.findOne({
         'accounts.id': twitchID,
         'accounts.type': 'twitch'
     });
 }
 
-async function getUserByUsername(username: string): Promise<IUsers | null> {
+async function getUserByUsername(username: string): Promise<UserDocument | null> {
     return await UsersSchema.findOne({
         'accounts.name': username,
         'accounts.type': 'twitch'
     });
 }
 
+async function getTwitchUserFromToken(accessToken: string): Promise<{
+    id: string;
+    login: string;
+    display_name: string;
+    profile_image_url?: string;
+    email?: string;
+} | null> {
+    const response = await fetch('https://api.twitch.tv/helix/users', {
+        headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Client-Id': process.env.CLIENT_ID!
+        }
+    });
+
+    if (!response.ok) {
+        return null;
+    }
+
+    const payload = await response.json() as {
+        data?: Array<{
+            id: string;
+            login: string;
+            display_name: string;
+            profile_image_url?: string;
+            email?: string;
+        }>;
+    };
+
+    if (!payload.data || payload.data.length === 0) {
+        return null;
+    }
+
+    return payload.data[0];
+}
+
+async function getAccessContext(requesterID: string, channelID: string, permission: string): Promise<{ allowed: boolean; role: 'owner' | 'admin' | 'none' }> {
+    if (requesterID === channelID) {
+        return { allowed: true, role: 'owner' };
+    }
+
+    const permissionsToCheck = ['*', permission];
+    const admin = await AdminSchema.findOne({
+        channelID,
+        adminID: requesterID,
+        actived: true,
+        permissions: { $in: permissionsToCheck }
+    }).lean();
+
+    if (admin) {
+        return { allowed: true, role: 'admin' };
+    }
+
+    return { allowed: false, role: 'none' };
+}
+
+function buildSessionPayload(user: IUsers, administrating: AdminChannelSummary[]): AuthenticatedUserSession {
+    const twitchAccount = user.accounts.find((account) => account.type === 'twitch');
+
+    return {
+        twitch: {
+            id: twitchAccount?.id || '',
+            login: twitchAccount?.name || '',
+            display_name: twitchAccount?.name || user.name,
+            email: twitchAccount?.email || user.email
+        },
+        app: {
+            name: user.name,
+            email: user.email,
+            language: resolveSessionLanguage(user.language),
+            plan_tier: user.plan_tier,
+            plan_tier_until: user.plan_tier_until,
+            actived: twitchAccount?.actived || false,
+            chat_enabled: twitchAccount?.chat_enabled || false,
+            twitch_user_id: twitchAccount?.id || '',
+            has_permissions: twitchAccount?.has_permissions || false,
+            up_to_date_permissions: twitchAccount?.up_to_date_permissions || false,
+            administrating
+        }
+    };
+}
+
+function isAllowedRedirectUri(redirectUri: string): boolean {
+    try {
+        const parsed = new URL(redirectUri);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            return false;
+        }
+
+        if (parsed.hostname === 'localhost') {
+            return true;
+        }
+
+        return parsed.hostname === 'domdimabot.com' || parsed.hostname.endsWith('.domdimabot.com');
+    } catch {
+        return false;
+    }
+}
+
 const TWITCH_AUTH_SCOPES = [
     "analytics:read:extensions", "analytics:read:games", "bits:read", "channel:manage:ads", "channel:read:ads", "channel:manage:broadcast", "channel:read:charity", "channel:edit:commercial", "channel:read:editors", "channel:manage:extensions", "channel:read:goals", "channel:read:guest_star", "channel:manage:guest_star", "channel:read:hype_train", "channel:manage:moderators", "channel:read:polls", "channel:manage:polls", "channel:read:predictions", "channel:manage:predictions", "channel:manage:raids", "channel:read:redemptions", "channel:manage:redemptions", "channel:manage:schedule", "channel:read:subscriptions", "channel:manage:videos", "channel:read:vips", "channel:manage:vips", "clips:edit", "moderation:read", "moderator:manage:announcements", "moderator:manage:automod", "moderator:read:automod_settings", "moderator:manage:automod_settings", "moderator:manage:banned_users", "moderator:read:blocked_terms", "moderator:manage:blocked_terms", "moderator:read:chat_messages", "moderator:manage:chat_messages", "moderator:read:chat_settings", "moderator:manage:chat_settings", "moderator:read:chatters", "moderator:read:followers", "moderator:read:guest_star", "moderator:manage:guest_star", "moderator:read:shield_mode", "moderator:manage:shield_mode", "moderator:read:shoutouts", "moderator:manage:shoutouts", "user:edit", "user:edit:follows", "user:read:blocked_users", "user:manage:blocked_users", "user:read:broadcast", "user:manage:chat_color", "user:read:email", "user:read:follows", "user:read:subscriptions", "user:manage:whispers", "channel:bot", "channel:moderate", "chat:edit", "chat:read", "user:bot", "user:read:chat", "whispers:read", "whispers:edit", "user:write:chat", "channel:manage:clips", "moderator:read:suspicious_users", "moderator:read:unban_requests", "moderator:manage:unban_requests", "moderator:read:warnings", "moderator:manage:warnings"
 ];
 
-async function exchangeOAuthCode(code: string): Promise<{ access_token: string; refresh_token: string; error?: string }> {
+async function exchangeOAuthCode(code: string, redirectUri: string): Promise<{ access_token: string; refresh_token: string; expires_in: number; error?: string }> {
     const params = new URLSearchParams({
         client_id: process.env.CLIENT_ID!,
         client_secret: process.env.CLIENT_SECRET!,
         code: code,
         grant_type: 'authorization_code',
-        redirect_uri: `https://domdimabot.com/login`
+        redirect_uri: redirectUri
     });
 
     const response = await fetch(`https://id.twitch.tv/oauth2/token?${params}`, {
@@ -183,16 +292,49 @@ async function exchangeOAuthCode(code: string): Promise<{ access_token: string; 
     const data = await response.json();
 
     if (data.error) {
-        return { access_token: '', refresh_token: '', error: data.error };
+        return { access_token: '', refresh_token: '', expires_in: 0, error: data.error };
     }
 
     return {
         access_token: data.access_token,
         refresh_token: data.refresh_token,
+        expires_in: typeof data.expires_in === 'number' ? data.expires_in : 7200,
     };
 }
 
-async function updateUserDataTokens(userId: string, accessToken: string, refreshToken: string, activate: boolean = false): Promise<IUsers | StandardResponse | null> {
+async function seedTwitchTokenCache(channelID: string, accessToken: string, refreshToken: string, expiresIn: number): Promise<void> {
+    const cache = await getDragonflyClient('AuthRoute token cache');
+    const expiresAt = Math.floor(Date.now() / 1000) + expiresIn;
+
+    await cache.hSet(`accounts:twitch:${channelID}:data`, 'access_token', accessToken);
+    await cache.hSet(`accounts:twitch:${channelID}:data`, 'refresh_token', refreshToken);
+    await cache.hSet(`accounts:twitch:${channelID}:data`, 'expires_at', String(expiresAt));
+    await cache.hSet(`accounts:twitch:${channelID}:data`, 'has_permissions', 'true');
+    await cache.hSet(`accounts:twitch:${channelID}:data`, 'up_to_date_permissions', 'true');
+}
+
+async function cleanupLegacyBitsSubscriptions(channelID: string): Promise<void> {
+    try {
+        const migrationResult = await migrateLegacyBitsEventsubs(channelID);
+
+        if (migrationResult.errors.length > 0) {
+            console.error('[AUTH] Legacy bits cleanup encountered errors', {
+                channelID,
+                errors: migrationResult.errors,
+                timestamp: new Date().toISOString()
+            });
+        }
+    } catch (error) {
+        console.error('[AUTH] Legacy bits cleanup failed', {
+            channelID,
+            error: error instanceof Error ? error.message : String(error),
+            stack: error instanceof Error ? error.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+    }
+}
+
+async function updateUserDataTokens(userId: string, accessToken: string, refreshToken: string, activate: boolean = false): Promise<UserDocument | StandardResponse | null> {
     if (!accessToken || !refreshToken) {
         return {
             error: true,
@@ -264,7 +406,9 @@ router.get('/register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, r
         }
 
         try {
-            const oauthResult = await exchangeOAuthCode(token);
+            const host = req.get('host') || 'api.domdimabot.com';
+            const protocol = host.includes('localhost') ? 'http' : 'https';
+            const oauthResult = await exchangeOAuthCode(token, `${protocol}://${host}/auth/register`);
 
             if (oauthResult.error) {
                 console.error('[AUTH/REGISTER] OAuth token exchange failed', {
@@ -275,7 +419,7 @@ router.get('/register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, r
                 return res.status(400).send(oauthResult.error);
             }
 
-            const { access_token, refresh_token } = oauthResult;
+            const { access_token, refresh_token, expires_in } = oauthResult;
 
             const user = await getUserByUsername(username);
 
@@ -320,6 +464,7 @@ router.get('/register', async (req: Request<{}, {}, {}, OAuthCallbackRequest>, r
             }
 
             await TwitchStreamers.updateTwitchAccountsInCache();
+            await seedTwitchTokenCache(channelID, access_token, refresh_token, expires_in);
 
             const streamer = await TwitchStreamers.getTwitchAccountById(channelID);
 
@@ -365,7 +510,9 @@ router.get('/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackReque
         }
 
         try {
-            const oauthResult = await exchangeOAuthCode(token);
+            const host = req.get('host') || 'api.domdimabot.com';
+            const protocol = host.includes('localhost') ? 'http' : 'https';
+            const oauthResult = await exchangeOAuthCode(token, `${protocol}://${host}/auth/reauthenticate`);
 
             if (oauthResult.error) {
                 console.error('[AUTH/REAUTHENTICATE] OAuth token exchange failed', {
@@ -376,7 +523,7 @@ router.get('/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackReque
                 return res.status(400).send(oauthResult.error);
             }
 
-            const { access_token, refresh_token } = oauthResult;
+            const { access_token, refresh_token, expires_in } = oauthResult;
 
             const user = await getUserByUsername(username);
 
@@ -400,6 +547,7 @@ router.get('/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackReque
             const twitchAccount = (updatedUser as IUsers).accounts.find(acc => acc.type === 'twitch');
 
             if (twitchAccount) {
+                await seedTwitchTokenCache(twitchAccount.id, access_token, refresh_token, expires_in);
                 await TwitchStreamers.getTwitchAccountById(twitchAccount.id);
             }
 
@@ -417,9 +565,165 @@ router.get('/reauthenticate', async (req: Request<{}, {}, {}, OAuthCallbackReque
         }
     });
 
+router.post('/exchange-code', async (req: Request<{}, {}, ExchangeCodeRequestBody>, res: Response) => {
+        const { code, redirectUri, state } = req.body;
+
+        if (!code || !redirectUri) {
+            return res.status(400).json({
+                error: true,
+                message: 'Missing code or redirectUri',
+                status: 400
+            });
+        }
+
+        if (!isAllowedRedirectUri(redirectUri)) {
+            return res.status(400).json({
+                error: true,
+                message: 'Invalid redirectUri',
+                status: 400
+            });
+        }
+
+        try {
+            const oauthResult = await exchangeOAuthCode(code, redirectUri);
+
+            if (oauthResult.error) {
+                return res.status(400).json({
+                    error: true,
+                    message: oauthResult.error,
+                    status: 400
+                });
+            }
+
+            const twitchUser = await getTwitchUserFromToken(oauthResult.access_token);
+            if (!twitchUser) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unable to fetch Twitch user from token',
+                    status: 401
+                });
+            }
+
+            return res.status(200).json({
+                error: false,
+                message: 'Code exchanged successfully',
+                status: 200,
+                data: {
+                    access_token: oauthResult.access_token,
+                    refresh_token: oauthResult.refresh_token,
+                    twitch_user: twitchUser,
+                    state: state || null
+                }
+            });
+        } catch (error) {
+            console.error('Error in POST /auth/exchange-code:', {
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            return res.status(500).json({
+                error: true,
+                message: 'Internal server error',
+                status: 500
+            });
+        }
+    });
+
+router.get('/session', authMiddleware as any, async (req: any, res: Response) => {
+        const requesterID = req.user?.id;
+
+        if (!requesterID) {
+            return res.status(401).json({
+                error: true,
+                message: 'Unauthorized',
+                status: 401
+            });
+        }
+
+        try {
+            const user = await getUserByTwitchID(requesterID);
+            if (!user) {
+                return res.status(404).json({
+                    error: true,
+                    message: 'User not found',
+                    status: 404
+                });
+            }
+
+            const administrating = await getAdministratingChannels(requesterID);
+
+            return res.status(200).json({
+                error: false,
+                message: 'Session fetched successfully',
+                status: 200,
+                data: buildSessionPayload(user, administrating)
+            });
+        } catch (error) {
+            console.error('Error in GET /auth/session:', {
+                requesterID,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            return res.status(500).json({
+                error: true,
+                message: 'Internal server error',
+                status: 500
+            });
+        }
+    });
+
+router.get('/access/:channelID', authMiddleware as any, async (req: any, res: Response) => {
+        const requesterID = req.user?.id;
+        const permission = req.query.permission || 'dashboard:view';
+        const { channelID } = req.params;
+        const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
+
+        if (!requesterID) {
+            return res.status(401).json({
+                error: true,
+                message: 'Unauthorized',
+                status: 401
+            });
+        }
+
+        try {
+            const access = await getAccessContext(requesterID, channelIdStr, permission);
+
+            return res.status(access.allowed ? 200 : 403).json({
+                error: !access.allowed,
+                message: access.allowed ? 'Access granted' : 'You do not have permission to access this route',
+                status: access.allowed ? 200 : 403,
+                data: {
+                    allowed: access.allowed,
+                    role: access.role,
+                    channelID: channelIdStr,
+                    permission
+                }
+            });
+        } catch (error) {
+            console.error('Error in GET /auth/access/:channelID:', {
+                requesterID,
+                channelID: channelIdStr,
+                permission,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            return res.status(500).json({
+                error: true,
+                message: 'Internal server error',
+                status: 500
+            });
+        }
+    });
+
 router.post('/login', async (req: Request, res: Response) => {
         const body = req.body as LoginRequestBody;
-        const { name, id, email, referralCode } = body;
+        const { name, id, email, referralCode, language } = body;
 
         if (!id) {
             return res.status(400).json({
@@ -440,8 +744,17 @@ router.post('/login', async (req: Request, res: Response) => {
 
         try {
             const existingUser = await getUserByTwitchID(id);
+            const persistedLanguage = resolvePersistedLanguage(language);
 
             if (existingUser) {
+                if (!existingUser.language) {
+                    existingUser.language = persistedLanguage;
+                    await UsersSchema.updateOne(
+                        { _id: existingUser._id },
+                        { $set: { language: persistedLanguage } }
+                    );
+                }
+
                 const twitchAccount = existingUser.accounts.find(acc => acc.type === 'twitch');
                 if (!twitchAccount) {
                     return res.status(404).json({
@@ -451,6 +764,8 @@ router.post('/login', async (req: Request, res: Response) => {
                     });
                 }
 
+                await cleanupLegacyBitsSubscriptions(twitchAccount.id);
+
                 const administrating = await getAdministratingChannels(id);
 
                 return res.status(200).json({
@@ -459,6 +774,7 @@ router.post('/login', async (req: Request, res: Response) => {
                     data: {
                         name: existingUser.name,
                         email: existingUser.email,
+                        language: resolveSessionLanguage(existingUser.language),
                         plan_tier: existingUser.plan_tier,
                         plan_tier_until: existingUser.plan_tier_until,
                         actived: twitchAccount.actived,
@@ -485,6 +801,7 @@ router.post('/login', async (req: Request, res: Response) => {
             const newUser = new UsersSchema({
                 name: name,
                 email: email,
+                language: persistedLanguage,
                 accounts: [{
                     type: 'twitch',
                     id: id,
@@ -548,6 +865,7 @@ router.post('/login', async (req: Request, res: Response) => {
                     data: {
                         name: newUser.name,
                         email: newUser.email,
+                        language: resolveSessionLanguage(newUser.language),
                         plan_tier: newUser.plan_tier,
                         plan_tier_until: newUser.plan_tier_until,
                         actived: newUser.accounts[0].actived,
@@ -666,7 +984,7 @@ router.get('/mock-register', async (req: Request<{}, {}, {}, OAuthCallbackReques
         }
     });
 
-async function performFactoryReset(channelID: string, channelName: string): Promise<Record<string, number>> {
+async function performFactoryReset(channelID: string, channelName: string, userID: string): Promise<Record<string, number>> {
     const existingEventsubs = await EventsubSchema.find({ channelID }).select('id').lean();
     for (const eventsub of existingEventsubs) {
         if (!eventsub.id) {
@@ -700,6 +1018,11 @@ async function performFactoryReset(channelID: string, channelName: string): Prom
         AdminSchema.deleteMany({ channelID })
     ]);
 
+    const [mediaCleanup, triggerFilesDelete] = await Promise.all([
+        cleanupChannelMediaOwnership({ channelID, userID }),
+        TriggerFileSchema.deleteMany({ channelID })
+    ]);
+
     await subscribeAllEventSubs(channelID);
     await createReservedCommands(channelID, channelName);
 
@@ -709,7 +1032,12 @@ async function performFactoryReset(channelID: string, channelName: string): Prom
         eventsubsDeleted: eventsubsDelete.deletedCount ?? 0,
         rewardsDeleted: rewardsDelete.deletedCount ?? 0,
         triggersDeleted: triggersDelete.deletedCount ?? 0,
-        adminsDeleted: adminsDelete.deletedCount ?? 0
+        adminsDeleted: adminsDelete.deletedCount ?? 0,
+        triggerFilesDeleted: triggerFilesDelete.deletedCount ?? 0,
+        mediaLibraryItemsRemoved: mediaCleanup.libraryItemsRemoved,
+        privateAssetsDeleted: mediaCleanup.privateAssetsDeleted,
+        publicAssetsTransferred: mediaCleanup.publicAssetsTransferred,
+        mediaAssetCountsUpdated: mediaCleanup.assetCountsUpdated
     };
 }
 
@@ -743,6 +1071,8 @@ router.post('/repair', authMiddleware as any, async (req: any, res: Response) =>
             }
 
             const channelID = twitchAccount.id;
+
+            const legacyBitsCleanup = await migrateLegacyBitsEventsubs(channelID);
 
             const existingEventSubs = await EventsubSchema.find({ channelID }).select('type').lean();
             const existingTypes = existingEventSubs.map(es => es.type);
@@ -787,7 +1117,9 @@ router.post('/repair', authMiddleware as any, async (req: any, res: Response) =>
                 message: `Repaired ${subscribedCount} missing event subscriptions`,
                 data: {
                     subscribedCount,
-                    totalNeeded: missingSubscriptions.length
+                    totalNeeded: missingSubscriptions.length,
+                    legacyBitsRemoved: legacyBitsCleanup.removedLegacyCount,
+                    legacyBitsCanonicalCreated: legacyBitsCleanup.createdCanonical
                 }
             });
 
@@ -836,7 +1168,7 @@ router.post('/factory-reset', authMiddleware as any, async (req: any, res: Respo
                 });
             }
 
-            const counts = await performFactoryReset(channelID, twitchAccount.name || req.user?.login || channelID);
+            const counts = await performFactoryReset(channelID, twitchAccount.name || req.user?.login || channelID, String(user._id));
 
             return res.status(200).json({
                 error: false,
@@ -882,10 +1214,9 @@ router.delete('/account', authMiddleware as any, async (req: any, res: Response)
             const twitchAccount = user.accounts.find(acc => acc.type === 'twitch');
             const channelName = twitchAccount?.name || req.user?.login || channelID;
 
-            const counts = await performFactoryReset(channelID, channelName);
+            const counts = await performFactoryReset(channelID, channelName, String(user._id));
 
             const [
-                triggerFilesDelete,
                 clipDesignsDelete,
                 titleConfigsDelete,
                 countdownTimersDelete,
@@ -893,7 +1224,6 @@ router.delete('/account', authMiddleware as any, async (req: any, res: Response)
                 commandTimersDelete,
                 personalitiesDelete
             ] = await Promise.all([
-                TriggerFileSchema.deleteMany({ channelID }),
                 ClipDesignSchema.deleteMany({ channelID }),
                 TitleConfigSchema.deleteMany({ channelID }),
                 CountdownTimerSchema.deleteMany({ channelID }),
@@ -919,7 +1249,6 @@ router.delete('/account', authMiddleware as any, async (req: any, res: Response)
                 status: 200,
                 data: {
                     ...counts,
-                    triggerFilesDeleted: triggerFilesDelete.deletedCount ?? 0,
                     clipDesignsDeleted: clipDesignsDelete.deletedCount ?? 0,
                     titleConfigsDeleted: titleConfigsDelete.deletedCount ?? 0,
                     countdownTimersDeleted: countdownTimersDelete.deletedCount ?? 0,

@@ -268,8 +268,7 @@ async function saveScopedVariable(
 
     const update = {
         $set: {
-            [`variables.${variableName}`]: value,
-            userLogin: normalizedLogin
+            [`variables.${variableName}`]: value
         },
         $setOnInsert: {
             channelID,
@@ -293,9 +292,7 @@ async function saveScopedVariable(
                     { channelID, scopeType, scopeName, userLogin: normalizedLogin },
                     {
                         $set: {
-                            [`variables.${variableName}`]: value,
-                            userId,
-                            userLogin: normalizedLogin
+                            [`variables.${variableName}`]: value
                         },
                         $setOnInsert: {
                             channelID,

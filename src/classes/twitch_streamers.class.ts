@@ -9,6 +9,18 @@ import { error, info } from "../utils/logger.js";
 
 type DragonflyClient = Awaited<ReturnType<typeof getDragonflyClient>>;
 
+function sanitizeCachePayload(payload: Record<string, unknown>): Record<string, string> {
+    const sanitized: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(payload)) {
+        if (typeof value === 'string') {
+            sanitized[key] = value;
+        }
+    }
+
+    return sanitized;
+}
+
 class TwitchStreamers {
     private cachePromise: ReturnType<typeof getDragonflyClient>;
 
@@ -49,8 +61,10 @@ class TwitchStreamers {
             await cache.del('twitch:accounts');
             for (const user of result ?? []) {
                 const twitchAccount = user.accounts.find((account) => account.type === 'twitch');
+                const cacheKey = `accounts:${twitchAccount!.type}:${twitchAccount!.id}:data`;
+                const existingExpiresAt = await cache.hGet(cacheKey, 'expires_at');
 
-                let twitchAccountCache: IUsersCache = {
+                const twitchAccountCache: IUsersCache = {
                     id: twitchAccount?.id ?? '',
                     name: twitchAccount?.name ?? '',
                     email: twitchAccount?.email ?? '',
@@ -59,15 +73,16 @@ class TwitchStreamers {
                     polar_sh_customer_id: user.polar_sh_customer_id ?? '',
                     refresh_token: decrypt(twitchAccount!.refresh_token) ?? '',
                     access_token: decrypt(twitchAccount!.access_token) ?? '',
+                    expires_at: existingExpiresAt || undefined,
                     actived: twitchAccount?.actived ? 'true' : 'false',
                     chat_enabled: twitchAccount?.chat_enabled ? 'true' : 'false',
                     has_permissions: twitchAccount?.has_permissions ? 'true' : 'false',
                     up_to_date_permissions: twitchAccount?.up_to_date_permissions ? 'true' : 'false',
                 };
 
-                cache.hSet(`accounts:${twitchAccount!.type}:${twitchAccount!.id}:data`, twitchAccountCache as Record<string, any>);
+                await cache.hSet(cacheKey, sanitizeCachePayload(twitchAccountCache as unknown as Record<string, unknown>));
 
-                cache.sAdd(`streamers:by:id`, twitchAccount!.id);
+                await cache.sAdd(`streamers:by:id`, twitchAccount!.id);
             }
 
             info({ message: 'Accounts added to cache' }, { destination: 'console' });
@@ -206,6 +221,9 @@ class TwitchStreamers {
                 return null;
             }
 
+            const cacheKey = `accounts:twitch:${id}:data`;
+            const existingExpiresAt = await cache.hGet(cacheKey, 'expires_at');
+
             const accountCache: IUsersCache = {
                 id: twitchAccount.id,
                 name: twitchAccount.name ?? '',
@@ -215,13 +233,14 @@ class TwitchStreamers {
                 polar_sh_customer_id: user.polar_sh_customer_id ?? '',
                 refresh_token: decrypt(twitchAccount.refresh_token) ?? '',
                 access_token: decrypt(twitchAccount.access_token) ?? '',
+                expires_at: existingExpiresAt || undefined,
                 actived: twitchAccount.actived ? 'true' : 'false',
                 chat_enabled: twitchAccount.chat_enabled ? 'true' : 'false',
                 has_permissions: twitchAccount.has_permissions ? 'true' : 'false',
                 up_to_date_permissions: twitchAccount.up_to_date_permissions ? 'true' : 'false'
             };
 
-            await cache.hSet(`accounts:twitch:${id}:data`, accountCache as Record<string, any>);
+            await cache.hSet(cacheKey, sanitizeCachePayload(accountCache as unknown as Record<string, unknown>));
             await cache.sAdd('streamers:by:id', id);
             await cache.del('twitch:accounts');
 

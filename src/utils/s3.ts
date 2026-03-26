@@ -1,4 +1,5 @@
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import type { Readable } from 'stream';
 
 const s3Client = new S3Client({
     region: process.env.S3_REGION!,
@@ -12,9 +13,13 @@ const s3Client = new S3Client({
 const BUCKET = process.env.S3_BUCKET!;
 const S3_PUBLIC_URL = process.env.S3_PUBLIC_URL || `https://${BUCKET}.${process.env.S3_REGION!}.${process.env.S3_ENDPOINT!}`;
 
+export function getS3PublicObjectUrl(key: string): string {
+    return `${S3_PUBLIC_URL}/${key}`;
+}
+
 export async function uploadTriggerFileToS3(
     channelID: string,
-    stream: Buffer | string,
+    stream: Buffer | Uint8Array | string | Readable,
     mimeType: string,
     key: string
 ): Promise<string> {
@@ -29,7 +34,7 @@ export async function uploadTriggerFileToS3(
         });
 
         await s3Client.send(command);
-        return `${S3_PUBLIC_URL}/${key}`;
+        return getS3PublicObjectUrl(key);
     } catch (error) {
         console.error('Error uploading trigger file to S3:', error);
         throw error;

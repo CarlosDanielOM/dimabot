@@ -13,9 +13,40 @@ import { streamOnlineHandler } from "./stream_online.handler.js";
 import { streamOfflineHandler } from "./stream_offline.handler.js";
 import { adBreakHandler } from "./ad_break.handler.js";
 import { banHandler } from "./ban.handler.js";
-import { info as logInfo } from "../utils/logger.js";
+import { error as logError, info as logInfo } from "../utils/logger.js";
+import {
+    recordStreamBitsEvent,
+    recordStreamFollowEvent,
+    recordStreamSubEvent,
+    recordSubscriptionLedgerEnd,
+    recordSubscriptionLedgerStart
+} from "../utils/stream_analytics.js";
+import {
+    CANONICAL_BITS_EVENT_TYPE,
+    canonicalizeEventsubType,
+    getEquivalentEventsubTypes,
+    isLegacyBitsEventType,
+    migrateLegacyBitsEventsubs
+} from "../utils/eventsub.js";
+import type { BitsEventsubMigrationResult } from "../utils/eventsub.js";
 //* TODO Redeem handler
 //* TODO Functions
+
+interface SubscriptionEventData {
+    broadcaster_user_id?: string;
+    broadcaster_user_login?: string;
+    broadcaster_user_name?: string;
+    user_id?: string;
+    user_login?: string;
+    user_name?: string;
+    tier?: string;
+    sub_tier?: string;
+    subscription_tier?: string;
+    is_gift?: boolean;
+    subscribed_at?: string;
+    ended_at?: string;
+    total?: number;
+}
 
 
 
@@ -34,13 +65,64 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
     if(STREAMER.chat_enabled == 'false') chatEnabled = false
 
     const {type} = subscriptionData;
+    const canonicalType = canonicalizeEventsubType(type);
+    const equivalentTypes = getEquivalentEventsubTypes(type);
 
-    let eventsubData: IEventsub | null = await EventsubSchema.findOne({type, channelID: STREAMER.id});
+    let bitsMigrationResult: BitsEventsubMigrationResult | null = null;
+    if (isLegacyBitsEventType(type)) {
+        bitsMigrationResult = await migrateLegacyBitsEventsubs(STREAMER.id).catch(async (migrationError) => {
+            console.error('Error migrating legacy bits eventsubs:', {
+                type,
+                channelID: STREAMER.id,
+                error: migrationError instanceof Error ? migrationError.message : String(migrationError),
+                stack: migrationError instanceof Error ? migrationError.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            await logError({
+                function: 'eventsubHandler.migrateLegacyBitsEventsubs',
+                type,
+                channelID: STREAMER.id,
+                error: migrationError instanceof Error ? migrationError.message : String(migrationError),
+                stack: migrationError instanceof Error ? migrationError.stack : undefined,
+                timestamp: new Date().toISOString()
+            }, { channelId: STREAMER.id, destination: 'both' });
+
+            return null;
+        });
+    }
+
+    const shouldSkipLegacyBitsEvent = isLegacyBitsEventType(type)
+        && Boolean(bitsMigrationResult?.hadCanonicalBeforeMigration);
+
+    if (shouldSkipLegacyBitsEvent) {
+        await logInfo({
+            message: 'Skipping legacy bits event because canonical subscription exists',
+            type,
+            canonicalType,
+            channelID: STREAMER.id
+        }, { channelId: STREAMER.id, destination: 'both' });
+        return;
+    }
+
+    let eventsubData: IEventsub | null = null;
+
+    if (canonicalType === CANONICAL_BITS_EVENT_TYPE) {
+        eventsubData = bitsMigrationResult?.canonicalEventsub
+            || await EventsubSchema.findOne({ channelID: STREAMER.id, type: CANONICAL_BITS_EVENT_TYPE })
+            || await EventsubSchema.findOne({ channelID: STREAMER.id, type: { $in: equivalentTypes.filter((eventType) => eventType !== CANONICAL_BITS_EVENT_TYPE) } });
+    } else {
+        eventsubData = await EventsubSchema.findOne({
+            channelID: STREAMER.id,
+            type: canonicalType
+        });
+    }
+
     if(!eventsubData) {
         eventsubData = {
             id: '',
             status: '',
-            type: '',
+            type: canonicalType,
             version: '',
             condition: {},
             created_at: '',
@@ -70,6 +152,109 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
         console.log({error: 'No data found', type, condition: subscriptionData.condition});
     }
 
+    const resolveTier = (source: unknown): string | undefined => {
+        if (!source || typeof source !== 'object') {
+            return undefined;
+        }
+
+        const data = source as SubscriptionEventData;
+        const rawTier = data.tier ?? data.sub_tier ?? data.subscription_tier;
+        return typeof rawTier === 'string' ? rawTier : undefined;
+    };
+
+    const resolveGiftQuantity = (source: unknown): number => {
+        if (!source || typeof source !== 'object') {
+            return 1;
+        }
+
+        const data = source as SubscriptionEventData;
+        const total = Number(data.total);
+        if (Number.isFinite(total) && total > 0) {
+            return Math.round(total);
+        }
+        return 1;
+    };
+
+    const trackAnalytics = async (): Promise<void> => {
+        const subscriptionEvent = eventData as unknown as SubscriptionEventData;
+
+        switch (type) {
+            case CANONICAL_BITS_EVENT_TYPE:
+            case 'channel.cheer':
+            case 'channel.bit.use': {
+                if (type !== CANONICAL_BITS_EVENT_TYPE && bitsMigrationResult?.hadCanonicalBeforeMigration) {
+                        break;
+                }
+
+                const bits = Number((eventData as IBitUseEvent).bits);
+                if (Number.isFinite(bits) && bits > 0) {
+                    await recordStreamBitsEvent({
+                        channelID: STREAMER.id,
+                        bits: Math.round(bits)
+                    });
+                }
+                break;
+            }
+            case 'channel.follow':
+                await recordStreamFollowEvent({ channelID: STREAMER.id });
+                break;
+            case 'channel.subscribe':
+            case 'channel.subscription.message':
+                await recordSubscriptionLedgerStart({
+                    platform: 'twitch',
+                    streamer_id: STREAMER.id,
+                    streamer_login: subscriptionEvent.broadcaster_user_login,
+                    streamer_name: subscriptionEvent.broadcaster_user_name,
+                    user_id: String(subscriptionEvent.user_id || ''),
+                    user_login: subscriptionEvent.user_login,
+                    user_name: subscriptionEvent.user_name,
+                    tier: resolveTier(subscriptionEvent),
+                    is_gift: Boolean(subscriptionEvent.is_gift),
+                    subbed_at: subscriptionEvent.subscribed_at
+                });
+                await recordStreamSubEvent({
+                    channelID: STREAMER.id,
+                    quantity: 1,
+                    tier: resolveTier(subscriptionEvent)
+                });
+                break;
+            case 'channel.subscription.gift':
+                await recordStreamSubEvent({
+                    channelID: STREAMER.id,
+                    quantity: resolveGiftQuantity(subscriptionEvent),
+                    tier: resolveTier(subscriptionEvent)
+                });
+                break;
+            case 'channel.subscription.end':
+                await recordSubscriptionLedgerEnd({
+                    platform: 'twitch',
+                    streamer_id: STREAMER.id,
+                    user_id: String(subscriptionEvent.user_id || ''),
+                    ended_at: subscriptionEvent.ended_at
+                });
+                break;
+        }
+    };
+
+    await trackAnalytics().catch(async (analyticsError) => {
+        console.error('Error in eventsubHandler.trackAnalytics:', {
+            type,
+            channelID: STREAMER.id,
+            error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+            stack: analyticsError instanceof Error ? analyticsError.stack : undefined,
+            timestamp: new Date().toISOString()
+        });
+
+        await logError({
+            function: 'eventsubHandler.trackAnalytics',
+            type,
+            channelID: STREAMER.id,
+            error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+            stack: analyticsError instanceof Error ? analyticsError.stack : undefined,
+            timestamp: new Date().toISOString()
+        }, { channelId: STREAMER.id, destination: 'both' });
+    });
+
     if(!eventsubData.enabled) return;
 
     const handleMessageOnlyEvent = async () => {
@@ -98,8 +283,8 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
         case 'channel.raid':
             await raidHandler(eventData as IRaidEventData, eventsubData);
             break;
+        case CANONICAL_BITS_EVENT_TYPE:
         case 'channel.bit.use':
-        case 'channel.bits.use':
         case 'channel.cheer':
             await cheerHandler(eventData as IBitUseEvent, eventsubData, chatEnabled);
             break;
@@ -107,13 +292,13 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
             await redemptionHandler(eventData as IRedemptionEvent, chatEnabled);
             break;
         case 'channel.follow':
-            followHandler(eventData as IFollowEvent, eventsubData, chatEnabled);
+            await followHandler(eventData as IFollowEvent, eventsubData, chatEnabled);
             break;
         case 'stream.online':
-            streamOnlineHandler(eventData as IStreamOnlineEvent, eventsubData, chatEnabled);
+            await streamOnlineHandler(eventData as IStreamOnlineEvent, eventsubData, chatEnabled);
             break;
         case 'stream.offline':
-            streamOfflineHandler(eventData as IStreamOfflineEvent, eventsubData, chatEnabled);
+            await streamOfflineHandler(eventData as IStreamOfflineEvent, eventsubData, chatEnabled);
             break;
         case 'channel.ad_break.begin':
             adBreakHandler(eventData as IAdBreakEvent, eventsubData, chatEnabled);
@@ -124,6 +309,7 @@ export const eventsubHandler = async (subscriptionData: ITwitchSubscriptionData,
         case 'channel.subscribe':
         case 'channel.subscription.gift':
         case 'channel.subscription.message':
+        case 'channel.subscription.end':
         case 'channel.shoutout.receive':
         case 'channel.hype_train.begin':
         case 'channel.hype_train.progress':

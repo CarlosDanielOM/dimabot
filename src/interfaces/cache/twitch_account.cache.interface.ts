@@ -4,6 +4,7 @@ export interface ITwitchAccountCache {
     email: string;
     refresh_token: string;
     access_token: string;
+    expires_at?: string;
     polar_sh_customer_id: string;
     actived: 'true' | 'false';
     chat_enabled: 'true' | 'false';

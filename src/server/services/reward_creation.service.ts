@@ -73,6 +73,36 @@ async function deleteTwitchReward(channelID: string, rewardID: string): Promise<
     }
 }
 
+export async function patchTwitchReward(channelID: string, body: Record<string, any>, rewardID: string): Promise<any> {
+    const streamerHeaderResult = await getTwitchStreamerHeaderById(channelID);
+
+    if (streamerHeaderResult.error || !streamerHeaderResult.header) {
+        return { error: streamerHeaderResult.message };
+    }
+
+    const parsedBody = twitchBodyParser(body);
+    const params = new URLSearchParams();
+    params.append('broadcaster_id', channelID);
+    params.append('id', rewardID);
+
+    const response = await fetch(
+        getTwitchHelixUrl('channel_points/custom_rewards', params.toString()),
+        {
+            method: 'PATCH',
+            headers: streamerHeaderResult.header as unknown as Record<string, string>,
+            body: JSON.stringify(parsedBody)
+        }
+    );
+
+    const result = await response.json();
+
+    if (result.error) {
+        return result;
+    }
+
+    return result.data?.[0];
+}
+
 async function createTwitchReward(channelID: string, body: Record<string, any>): Promise<any> {
     const streamerHeaderResult = await getTwitchStreamerHeaderById(channelID);
 
@@ -191,7 +221,8 @@ export async function createRewardWithEventsub({
         };
     }
 
-    const priceIncrease = body.priceIncrease || 0;
+    const rawCostChange = body.costChange ?? body.priceIncrease ?? 0;
+    const costChange = Number.isFinite(Number(rawCostChange)) ? Number(rawCostChange) : 0;
     const rewardMessage = body.message || '';
     const returnToOriginalCost = body.returnToOriginalCost || false;
 
@@ -205,7 +236,7 @@ export async function createRewardWithEventsub({
         cost: rewardData.cost,
         originalCost: rewardData.cost,
         isEnabled: rewardData.is_enabled,
-        costChange: priceIncrease,
+        costChange,
         message: rewardMessage,
         returnToOriginalCost,
         cooldown: body.cooldown || 0,

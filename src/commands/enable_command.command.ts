@@ -1,5 +1,4 @@
 import Commands from '../classes/command.class.js';
-import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
 
 interface EnableCommandResponse {
     error: boolean;
@@ -28,14 +27,6 @@ export async function enableCommandCommand(channelID: string, argument: string):
                 status: 400,
                 type: 'command_enabled'
             };
-        }
-
-        const cache = await getDragonflyClient('enableCommandCommand');
-        const cacheKey = `${channelID}:commands:${argument}`;
-        const exists = await cache.exists(cacheKey);
-
-        if (exists) {
-            await cache.hSet(cacheKey, 'enabled', 'true');
         }
 
         await Commands.updateCommandInDB(channelID, argument, { enabled: true });

@@ -41,10 +41,14 @@ export async function raidHandler(
             };
         }
 
-        const { to_broadcaster_user_id, from_broadcaster_user_name } = eventData;
+        const {
+            to_broadcaster_user_id,
+            from_broadcaster_user_login,
+            from_broadcaster_user_name
+        } = eventData;
 
         // Get raw message template (may contain special commands like $(user), $(twitch.game), etc.)
-        const rawMessage = eventsubData.message || `Check out $(user) at https://twitch.tv/$(user) and give them a follow! They were last playing $(twitch.game)`;
+        const rawMessage = eventsubData.message || `Check out $(raid.channel) at https://twitch.tv/$(raid.login) and give them a follow! They were last playing $(twitch.game)`;
 
         // Parse special commands in the message
         // The parser will auto-extract user info, broadcaster info, and viewers from eventData
@@ -59,7 +63,7 @@ export async function raidHandler(
         // Call the shoutout command with the parsed message
         const shoutoutResult = await handleShoutoutCommand(
             to_broadcaster_user_id,
-            from_broadcaster_user_name,
+            from_broadcaster_user_login,
             'purple',
             modID,
             eventsubData.clipEnabled,

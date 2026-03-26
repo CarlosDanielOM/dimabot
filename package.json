@@ -15,7 +15,12 @@
     "cron:dev": "cross-env NODE_ENV=development CRON_WORKER_RUNTIME=tsx tsx src/workers/cron.index.ts",
     "cron:prod": "cross-env NODE_ENV=production CRON_WORKER_RUNTIME=node node dist/workers/cron.index.js",
     "build": "tsc",
-    "migrate:event-plan-tier": "tsx src/scripts/migrate_event_plan_tier.script.ts"
+    "migrate:event-plan-tier": "tsx src/scripts/migrate_event_plan_tier.script.ts",
+    "migrate:bits-canonical": "tsx src/scripts/migrate_bits_canonical.script.ts",
+    "backup:full-db": "tsx src/scripts/backup_full_database.script.ts",
+    "migrate:trigger-media": "tsx src/scripts/migrate_trigger_media.script.ts",
+    "cleanup:invalid-trigger-files": "tsx src/scripts/cleanup_invalid_legacy_trigger_files.script.ts",
+    "migrate:legacy-trigger-rewards": "tsx src/scripts/migrate_legacy_trigger_rewards.script.ts"
   },
   "keywords": [
     "Bot",

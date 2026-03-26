@@ -19,6 +19,7 @@ import { pubSubManager } from '../classes/pubsub_manager.class.js';
 import { server } from './server.js';
 import { websocket } from './websocket.js';
 import { clipQueueHandler } from '../handlers/clip_queue.handler.js';
+import { ttsQueueHandler } from '../handlers/tts_queue.handler.js';
 import { getPolarShClient } from '../utils/polarsh.js';
 import { info, error } from '../utils/logger.js';
 import { reconcileLiveSessionsOnStartup, startStreamAnalyticsWorker } from '../utils/stream_analytics.js';
@@ -40,6 +41,7 @@ await startSiteAnalytics();
 
 // Initialize clip queue handler
 await clipQueueHandler.init();
+await ttsQueueHandler.init();
 
 if (process.env.STREAM_ANALYTICS_INLINE === 'true') {
     await reconcileLiveSessionsOnStartup();

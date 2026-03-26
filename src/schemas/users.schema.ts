@@ -1,4 +1,4 @@
-import { Schema, model, Document, Types } from "mongoose";
+import { Schema, model, type HydratedDocument, Types } from "mongoose";
 
 interface IToken {
     iv: string;
@@ -24,6 +24,7 @@ export interface IUsers {
     name: string;
     email: string;
     accounts: IAccounts[];
+    language?: 'en' | 'es' | null;
     polar_sh_customer_id: string;
     plan_tier: 'free' | 'premium' | 'pro';
     plan_tier_until: Date | null;
@@ -59,6 +60,7 @@ const usersSchema = new Schema<IUsers>({
     name: String,
     email: String,
     accounts: [accountsSchema],
+    language: { type: String, enum: ['en', 'es'], default: null },
     polar_sh_customer_id: { type: String, default: null },
     plan_tier: { type: String, default: 'free', enum: ['free', 'premium', 'pro'] },
     plan_tier_until: { type: Date, default: null },
@@ -69,6 +71,8 @@ const usersSchema = new Schema<IUsers>({
     token_balance: { type: Number, default: 0 },
 }, { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }})
 
-const UsersSchema = model('users', usersSchema);
+export type UserDocument = HydratedDocument<IUsers>;
+
+const UsersSchema = model<IUsers>('users', usersSchema);
 
 export default UsersSchema;

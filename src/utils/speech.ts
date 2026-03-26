@@ -2,26 +2,28 @@ import { getDragonflyClient } from './databases/dragonfly.database.js';
 import { error } from './logger.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { getDirname } from './pollyfills.js';
+
+const __dirname = getDirname(import.meta.url);
+const speechPublicDir = path.resolve(__dirname, '../server/routes/public/speech');
 
 export async function clearSpeechFiles(channelID: string): Promise<void> {
     try {
         const cache = await getDragonflyClient('clearSpeechFiles');
-        const messageQueue = await cache.sMembers(`${channelID}:speach`);
-        
-        if (messageQueue.length === 0) return;
-        
-        for (const id of messageQueue) {
-            const filePath = path.join(process.cwd(), 'src-js/server/routes/public/speech', `${id}.mp3`);
-            
-            try {
-                if (await fileExists(filePath)) {
-                    await fs.unlink(filePath);
-                }
-            } catch (err) {
-                console.error(`Error deleting speech file ${filePath}:`, err);
-            }
-            
-            await cache.sRem(`${channelID}:speach`, id);
+
+        const queueKeys = await cache.keys(`twitch:${channelID}:tts:queue:data:*`);
+        for (const key of queueKeys) {
+            await cache.del(key);
+        }
+
+        await cache.del(`twitch:${channelID}:tts:queue`);
+        await cache.del(`twitch:${channelID}:tts:processing`);
+        await cache.del(`twitch:${channelID}:tts:connected`);
+        await cache.del(`twitch:${channelID}:tts:last_cleanup`);
+
+        const channelDir = path.join(speechPublicDir, channelID);
+        if (await fileExists(channelDir)) {
+            await fs.rm(channelDir, { recursive: true, force: true });
         }
     } catch (err) {
         await error({ 

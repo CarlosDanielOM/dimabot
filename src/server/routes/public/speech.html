@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech Overlay</title>
+    <style>
+        html, body {
+            margin: 0;
+            width: 100%;
+            height: 100%;
+            background: transparent;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <script>
+        const channelID = window.location.pathname.split('/')[2];
+        const socket = io(`/speech/${channelID}`, {
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
+        });
+
+        let currentAudio = null;
+
+        function finishSpeech(speechID) {
+            socket.emit('speech-ended', {
+                channelID,
+                speechID
+            });
+
+            if (currentAudio) {
+                currentAudio.remove();
+                currentAudio = null;
+            }
+        }
+
+        socket.on('speech', (payload) => {
+            if (!payload || !payload.audioUrl || !payload.speechID) {
+                return;
+            }
+
+            if (currentAudio) {
+                currentAudio.pause();
+                currentAudio.remove();
+                currentAudio = null;
+            }
+
+            const audio = document.createElement('audio');
+            audio.autoplay = true;
+            audio.src = payload.audioUrl;
+            audio.dataset.speechId = payload.speechID;
+
+            audio.addEventListener('ended', () => {
+                finishSpeech(payload.speechID);
+            }, { once: true });
+
+            audio.addEventListener('error', () => {
+                finishSpeech(payload.speechID);
+            }, { once: true });
+
+            document.body.appendChild(audio);
+            currentAudio = audio;
+
+            audio.play().catch(() => {
+                finishSpeech(payload.speechID);
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,3 +1,5 @@
+import type { Request } from 'express';
+
 export interface AuthenticatedUser {
     id: string;
     login: string;

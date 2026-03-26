@@ -1,15 +1,10 @@
-import { sendTrigger } from "../functions/triggers/send_trigger.trigger.js";
 import { sendTwitchChatMessage, type SendMessageContext } from "../functions/chats/send_message.chat.js";
 import { vipRedemptionFun } from "../functions/redemptions/vip.redemption.js";
 import { customRedemptionReward } from "../functions/redemptions/custom.redemption.js";
 import { TriggerSchema } from "../schemas/trigger.schema.js";
-import { TriggerFileSchema } from "../schemas/trigger_file.schema.js";
 import { RedemptionRewardSchema } from "../schemas/redemption_reward.schema.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import type { IRedemptionEvent } from "../interfaces/twitch/eventsub.interface.js";
-import type { ITrigger } from "../schemas/trigger.schema.js";
-import type { ITriggerFile } from "../schemas/trigger_file.schema.js";
-import type { IRedemptionReward as IRedemptionRewardSchema } from "../schemas/redemption_reward.schema.js";
 import { getApiUrl } from "../utils/dev.js";
 import { error as logError, info as logInfo } from "../utils/logger.js";
 import { parseSpecialCommands } from "./special_parser.handler.js";
@@ -33,6 +28,7 @@ async function runRedemptionSpecialFunctions(
         const parsed = await parseSpecialCommands(rawMessage, {
             channelID,
             eventData,
+            argument: eventData.user_input || '',
             variables: {
                 user: eventData.user_name,
                 userLogin: eventData.user_login,
@@ -121,7 +117,9 @@ export async function redemptionHandler(
                     eventData,
                     reward.title
                 );
-                await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+                if (parsedRewardMessage.trim() !== '') {
+                    await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+                }
             } else if (vipResult.rewardMessage) {
                 await runRedemptionSpecialFunctions(
                     vipResult.rewardMessage,
@@ -153,8 +151,11 @@ export async function redemptionHandler(
 
         const trigger = await TriggerSchema.findOne({
             channelID: broadcaster_user_id,
-            name: reward.title,
-            type: 'redemption'
+            $or: [
+                { rewardID: reward.id },
+                { name: reward.title },
+                { name: reward.title, type: 'redemption' }
+            ]
         });
 
         if (!trigger) {
@@ -185,7 +186,9 @@ export async function redemptionHandler(
                     eventData,
                     reward.title
                 );
-                await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+                if (parsedRewardMessage.trim() !== '') {
+                    await sendTwitchChatMessage(broadcaster_user_id, parsedRewardMessage, null);
+                }
             } else if (customResult.rewardMessage) {
                 await runRedemptionSpecialFunctions(
                     customResult.rewardMessage,
@@ -201,35 +204,10 @@ export async function redemptionHandler(
             };
         }
 
-        const file = await TriggerFileSchema.findOne({
-            name: trigger.file,
-            fileType: trigger.mediaType
-        });
-
-        if (!file) {
-            await logError({
-                function: 'redemptionHandler',
-                channelID: broadcaster_user_id,
-                triggerName: trigger.name,
-                error: 'Trigger file not found'
-            }, { channelId: broadcaster_user_id, destination: 'both' });
-
-            return {
-                error: true,
-                message: 'Trigger file not found'
-            };
-        }
-
         const customReward = await RedemptionRewardSchema.findOne({
             channelID: broadcaster_user_id,
             rewardID: trigger.rewardID
         });
-
-        const triggerData = {
-            url: file.fileUrl,
-            mediaType: file.fileType,
-            volume: trigger.volume
-        };
 
         const parsedRewardMessage = await runRedemptionSpecialFunctions(
             rewardData.message,
@@ -278,31 +256,12 @@ export async function redemptionHandler(
             }
         }
 
-        const delay = (trigger as any).delay ?? 0;
-
-        if (delay > 0) {
-            setTimeout(() => {
-                sendTrigger(broadcaster_user_id, triggerData, false);
-            }, delay * 1000);
-        } else {
-            const result = await sendTrigger(broadcaster_user_id, triggerData, false);
-            
-            if (result.error) {
-                await logError({
-                    function: 'redemptionHandler.sendTrigger',
-                    channelID: broadcaster_user_id,
-                    error: result.message
-                }, { channelId: broadcaster_user_id, destination: 'both' });
-            }
-        }
-
         await logInfo({
             message: 'Trigger redemption processed',
             channelID: broadcaster_user_id,
             user: user_name,
             reward: reward.title,
             trigger: trigger.name,
-            delay,
             parsedRewardMessage
         }, { channelId: broadcaster_user_id, destination: 'both' });
 

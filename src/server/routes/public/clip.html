@@ -17,16 +17,27 @@
 
         body {
             background-color: transparent;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #stage {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: flex-start;
+            justify-content: flex-start;
+            overflow: hidden;
         }
 
         #container {
             width: 800px;
             height: 225px;
-            position: absolute;
-            top: 0px;
-            left: 0px;
+            position: relative;
             overflow: hidden;
             display: flex;
+            transform-origin: top left;
         }
 
         /* Design 1 (Default) */
@@ -243,23 +254,25 @@
     </style>
 </head>
 <body>
-    <div id="container" class="design-1">
-        <div class="left-container" id="left">
-            <video id="vplayer"></video>
-        </div>
-        <div class="img" id="img"></div>
-        <div class="right-container" id="right">
-            <div class="streamer-info">
-                <div class="streamer-info-name">
-                    <h2 id="streamer-name"></h2>
+    <div id="stage">
+        <div id="container" class="design-1">
+            <div class="left-container" id="left">
+                <video id="vplayer"></video>
+            </div>
+            <div class="img" id="img"></div>
+            <div class="right-container" id="right">
+                <div class="streamer-info">
+                    <div class="streamer-info-name">
+                        <h2 id="streamer-name"></h2>
+                    </div>
                 </div>
-            </div>
-            <div class="stream-description">
-                <h4 id="stream-description"></h4>
-            </div>
-            <div class="stream-info">
-                <div class="stream-info-game">
-                    <h3 id="stream-game"></h3>
+                <div class="stream-description">
+                    <h4 id="stream-description"></h4>
+                </div>
+                <div class="stream-info">
+                    <div class="stream-info-game">
+                        <h3 id="stream-game"></h3>
+                    </div>
                 </div>
             </div>
         </div>
@@ -278,6 +291,16 @@
         const streamerName = document.getElementById('streamer-name');
         const streamDescription = document.getElementById('stream-description');
         const streamGame = document.getElementById('stream-game');
+        const BASE_WIDTH = 800;
+        const BASE_HEIGHT = 225;
+
+        function applyResponsiveScale() {
+            const scale = Math.min(window.innerWidth / BASE_WIDTH, window.innerHeight / BASE_HEIGHT);
+            container.style.transform = `scale(${Math.max(scale, 0.25)})`;
+        }
+
+        applyResponsiveScale();
+        window.addEventListener('resize', applyResponsiveScale);
         
         // Get design from URL parameter, default to design-1
         const urlParams = new URLSearchParams(window.location.search);

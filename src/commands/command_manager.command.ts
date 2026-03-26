@@ -322,11 +322,9 @@ export async function deleteCommand(channelID: string, commandCMD: string, userL
 
 export async function editCommand(channelID: string, argument: string, userLevel: number = 1): Promise<CommandManagerResponse> {
     try {
-        const cacheClient = await getDragonflyClient('editCommand');
         const { options, text } = getCmdOptions(argument);
         const opts = text.split(' ');
         const commandName = opts.shift();
-        const cacheKey = `twitch:${channelID}:commands:${commandName ?? 'undefined'}`;
 
         const oldCommand = await Commands.getCommandFromDB(channelID, commandName!);
 
@@ -364,7 +362,6 @@ export async function editCommand(channelID: string, argument: string, userLevel
                     } else {
                         command.cooldown = 15;
                     }
-                    cacheClient.hSet(cacheKey, 'cooldown', command.cooldown);
                     break;
                 case 'ul':
                     if (option.value.length > 1) {
@@ -390,7 +387,6 @@ export async function editCommand(channelID: string, argument: string, userLevel
                             };
                         }
                     }
-                    cacheClient.hSet(cacheKey, 'level', command.userLevel);
                     break;
                 default:
                     break;
@@ -418,8 +414,6 @@ export async function editCommand(channelID: string, argument: string, userLevel
 
         const updated = await Commands.updateCommandInDB(channelID, commandName!, command);
 
-        await cacheClient.del(cacheKey);
-
         if (updated.error) {
             return {
                 error: true,
@@ -427,8 +421,6 @@ export async function editCommand(channelID: string, argument: string, userLevel
                 status: updated.status ?? 500
             };
         }
-
-        await cacheClient.hSet(cacheKey, command as any);
 
         return {
             error: false,

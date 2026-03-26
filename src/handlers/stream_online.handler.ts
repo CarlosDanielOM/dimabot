@@ -7,6 +7,10 @@ import { incrementSiteAnalytics } from "../utils/siteanalytics.js";
 import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import { error as logError, info as logInfo } from "../utils/logger.js";
 import { recordStreamOnlineEvent } from "../utils/stream_analytics.js";
+import { loadChannelTimersIntoCache } from "../utils/timer_cache.js";
+import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
+
+const STREAM_ONLINE_DEDUPE_TTL_SECONDS = Math.max(60 * 60, Number(process.env.STREAM_ONLINE_DEDUPE_TTL_SECONDS || 60 * 60 * 24));
 
 interface StreamOnlineHandlerResponse {
     error: boolean;
@@ -20,14 +24,35 @@ export async function streamOnlineHandler(
 ): Promise<StreamOnlineHandlerResponse> {
     try {
         const { broadcaster_user_id, broadcaster_user_login } = eventData;
+        const streamID = String(eventData.id || `stream-${broadcaster_user_id}-${eventData.started_at || 'unknown'}`);
+        const cache = await getDragonflyClient('streamOnlineHandler');
+        const dedupeKey = `twitch:${broadcaster_user_id}:stream.online:${streamID}`;
+        const dedupeResult = await cache.set(dedupeKey, String(eventData.started_at || new Date().toISOString()), {
+            NX: true,
+            EX: STREAM_ONLINE_DEDUPE_TTL_SECONDS
+        });
+
+        if (dedupeResult !== 'OK') {
+            await logInfo({
+                message: 'Duplicate stream.online notification ignored',
+                channelID: broadcaster_user_id,
+                streamID
+            }, { channelId: broadcaster_user_id, destination: 'cache' });
+
+            return {
+                error: false,
+                message: 'Duplicate stream.online notification ignored'
+            };
+        }
 
         if (!chatEnabled) {
             await recordStreamOnlineEvent({
                 channelID: broadcaster_user_id,
                 channel: broadcaster_user_login,
-                streamID: eventData.id,
+                streamID,
                 startedAt: eventData.started_at
             });
+            await loadChannelTimersIntoCache(broadcaster_user_id);
             await getChannelEditors(broadcaster_user_id, true);
             await unVIPExpiredUser(eventData);
             await incrementSiteAnalytics('live', 1);
@@ -66,9 +91,11 @@ export async function streamOnlineHandler(
         await recordStreamOnlineEvent({
             channelID: broadcaster_user_id,
             channel: broadcaster_user_login,
-            streamID: eventData.id,
+            streamID,
             startedAt: eventData.started_at
         });
+
+        await loadChannelTimersIntoCache(broadcaster_user_id);
 
         await incrementSiteAnalytics('live', 1);
 

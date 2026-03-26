@@ -4,8 +4,44 @@ import { EventSchema, type IEvent } from '../../schemas/event.schema.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 import { authMiddleware } from '../../middleware/auth.middleware.js';
 import { error } from '../../utils/logger.js';
+import { canonicalizeEventsubType, getEquivalentEventsubTypes } from '../../utils/eventsub.js';
 
 const router = express.Router();
+
+function normalizeEventType<T extends { type?: string }>(event: T): T {
+    if (typeof event.type !== 'string') {
+        return event;
+    }
+
+    return {
+        ...event,
+        type: canonicalizeEventsubType(event.type)
+    };
+}
+
+function choosePreferredEvent<T extends { type?: string }>(current: T | undefined, candidate: T): T {
+    if (!current) {
+        return candidate;
+    }
+
+    const currentType = typeof current.type === 'string' ? current.type : '';
+    const candidateType = typeof candidate.type === 'string' ? candidate.type : '';
+
+    return candidateType === canonicalizeEventsubType(candidateType) && currentType !== canonicalizeEventsubType(currentType)
+        ? candidate
+        : current;
+}
+
+function dedupeEvents<T extends { type?: string }>(events: T[]): T[] {
+    const byType = new Map<string, T>();
+
+    for (const event of events) {
+        const key = canonicalizeEventsubType(typeof event.type === 'string' ? event.type : '');
+        byType.set(key, choosePreferredEvent(byType.get(key), event));
+    }
+
+    return Array.from(byType.values()).map(normalizeEventType);
+}
 
 router.get('/', authMiddleware as any, async (req: Request, res: Response) => {
     try {
@@ -29,7 +65,8 @@ router.get('/', authMiddleware as any, async (req: Request, res: Response) => {
 router.post('/events', authMiddleware as any, async (req: Request, res: Response) => {
     try {
         const eventData = req.body;
-        const eventType = eventData.type;
+        const eventType = canonicalizeEventsubType(eventData.type);
+        eventData.type = eventType;
 
         const requiredFields: Array<string> = [
             'name',
@@ -93,7 +130,7 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
             }
         }
 
-        const existingEvent = await EventSchema.findOne({ type: eventType });
+        const existingEvent = await EventSchema.findOne({ type: { $in: getEquivalentEventsubTypes(eventType) } });
         if (existingEvent) {
             return res.status(409).json({
                 error: true,
@@ -108,7 +145,7 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
         return res.status(201).json({
             error: false,
             message: 'Event created successfully',
-            data: savedEvent
+            data: normalizeEventType(savedEvent.toObject())
         });
     } catch (err) {
         await error({
@@ -128,11 +165,11 @@ router.post('/events', authMiddleware as any, async (req: Request, res: Response
 
 router.get('/events', authMiddleware as any, async (req: Request, res: Response) => {
     try {
-        const events = await EventSchema.find().sort({ createdAt: -1 });
+        const events = await EventSchema.find().sort({ createdAt: -1 }).lean();
 
         return res.status(200).json({
             error: false,
-            data: events
+            data: dedupeEvents(events)
         });
     } catch (err) {
         await error({
@@ -152,8 +189,9 @@ router.get('/events', authMiddleware as any, async (req: Request, res: Response)
 router.get('/events/:type', authMiddleware as any, async (req: Request, res: Response) => {
     try {
         const { type } = req.params;
-        const typeStr = Array.isArray(type) ? type[0] : type;
-        const event = await EventSchema.findOne({ type: typeStr });
+        const typeStr = canonicalizeEventsubType(Array.isArray(type) ? type[0] : type);
+        const events = await EventSchema.find({ type: { $in: getEquivalentEventsubTypes(typeStr) } }).lean();
+        const event = events.find((candidate) => candidate.type === typeStr) || events[0];
 
         if (!event) {
             return res.status(404).json({
@@ -165,7 +203,7 @@ router.get('/events/:type', authMiddleware as any, async (req: Request, res: Res
 
         return res.status(200).json({
             error: false,
-            data: event
+            data: normalizeEventType(event)
         });
     } catch (err) {
         await error({
@@ -188,6 +226,11 @@ router.patch('/events/:id', authMiddleware as any, async (req: Request, res: Res
     try {
         const { id } = req.params;
         const idStr = Array.isArray(id) ? id[0] : id;
+        const body = { ...req.body } as Record<string, unknown>;
+
+        if (typeof body.type === 'string') {
+            body.type = canonicalizeEventsubType(body.type);
+        }
 
         if (!mongoose.Types.ObjectId.isValid(idStr)) {
             return res.status(400).json({
@@ -197,7 +240,7 @@ router.patch('/events/:id', authMiddleware as any, async (req: Request, res: Res
             });
         }
 
-        event = await EventSchema.findByIdAndUpdate(idStr, req.body, { new: true });
+        event = await EventSchema.findByIdAndUpdate(idStr, body, { new: true }).lean();
 
         if (!event) {
             return res.status(404).json({
@@ -210,7 +253,7 @@ router.patch('/events/:id', authMiddleware as any, async (req: Request, res: Res
         return res.status(200).json({
             error: false,
             message: 'Event updated successfully',
-            data: event
+            data: normalizeEventType(event)
         });
     } catch (err) {
         await error({

@@ -3,6 +3,10 @@ import express from 'express';
 import { eventsubHandler } from '../handlers/eventsub.handler.js';
 import { revocationHandler } from '../handlers/revocation.handler.js';
 import type { ITwitchEventData, ITwitchSubscriptionData } from '../interfaces/twitch/eventsub.interface.js';
+import { getDragonflyClient } from '../utils/databases/dragonfly.database.js';
+import { endEventsubHandlerMetric, observeEventsubNotification, startEventsubHandlerMetric } from '../utils/observability/bot_runtime_metrics.js';
+
+const EVENTSUB_MESSAGE_DEDUPE_TTL_SECONDS = Math.max(300, Number(process.env.TWITCH_EVENTSUB_MESSAGE_TTL_SECONDS || 600));
 
 export const twitchEventsub = () => {
     const app = express();
@@ -24,6 +28,32 @@ export const twitchEventsub = () => {
 
     app.use(express.raw({ type: 'application/json' }));
 
+    async function claimEventsubMessage(messageId: string): Promise<boolean> {
+        if (!messageId) {
+            return true;
+        }
+
+        try {
+            const cache = await getDragonflyClient('TwitchEventsubWebhook');
+            const dedupeKey = `twitch:eventsub:message:${messageId}`;
+            const result = await cache.set(dedupeKey, new Date().toISOString(), {
+                NX: true,
+                EX: EVENTSUB_MESSAGE_DEDUPE_TTL_SECONDS
+            });
+
+            return result === 'OK';
+        } catch (error) {
+            console.error('Failed to claim EventSub message dedupe key:', {
+                messageId,
+                error: error instanceof Error ? error.message : String(error),
+                stack: error instanceof Error ? error.stack : undefined,
+                timestamp: new Date().toISOString()
+            });
+
+            return true;
+        }
+    }
+
     app.post('/eventsub', async (req, res) => {
         let secret = getSecret();
         let message = getHmacMessage(req);
@@ -33,16 +63,48 @@ export const twitchEventsub = () => {
             // console.log('Message verified');
 
             //GET JSON object from body
-            let notification = JSON.parse(req.body);
+            let notification = JSON.parse(req.body.toString('utf8'));
+            const eventType = String(notification?.subscription?.type || 'unknown');
+            const messageId = String(req.headers[TWITCH_MESSAGE_ID] || '');
+            const payloadBytes = Buffer.isBuffer(req.body)
+                ? req.body.length
+                : Buffer.byteLength(String(req.body || ''));
+            observeEventsubNotification(eventType, payloadBytes);
 
             if (MESSAGE_TYPE_NOTIFICATION === req.headers[MESSAGE_TYPE]) {
-                eventsubHandler(notification.subscription as ITwitchSubscriptionData, notification.event as ITwitchEventData);
+                const claimed = await claimEventsubMessage(messageId);
+                if (!claimed) {
+                    res.sendStatus(204);
+                    return;
+                }
+
+                const tracker = startEventsubHandlerMetric(eventType);
                 res.sendStatus(204);
+                void eventsubHandler(notification.subscription as ITwitchSubscriptionData, notification.event as ITwitchEventData)
+                    .then(() => {
+                        endEventsubHandlerMetric(tracker, false);
+                    })
+                    .catch((handlerError) => {
+                        endEventsubHandlerMetric(tracker, true);
+                        console.error('Error handling EventSub notification:', {
+                            eventType,
+                            messageId,
+                            error: handlerError instanceof Error ? handlerError.message : String(handlerError),
+                            stack: handlerError instanceof Error ? handlerError.stack : undefined,
+                            timestamp: new Date().toISOString()
+                        });
+                    });
             } else if (MESSAGE_TYPE_VERIFICATION === req.headers[MESSAGE_TYPE]) {
                 res.set('Content-Type', 'text/plain').status(200).send(notification.challenge);
             } else if (MESSAGE_TYPE_REVOCATION === req.headers[MESSAGE_TYPE]) {
-                revocationHandler(notification.subscription as ITwitchSubscriptionData);
                 res.sendStatus(204);
+                void Promise.resolve(revocationHandler(notification.subscription as ITwitchSubscriptionData)).catch((handlerError) => {
+                    console.error('Error handling EventSub revocation:', {
+                        error: handlerError instanceof Error ? handlerError.message : String(handlerError),
+                        stack: handlerError instanceof Error ? handlerError.stack : undefined,
+                        timestamp: new Date().toISOString()
+                    });
+                });
             } else {
                 res.sendStatus(204);
                 console.log(`Unkonwn message type: ${req.headers[MESSAGE_TYPE]}`)

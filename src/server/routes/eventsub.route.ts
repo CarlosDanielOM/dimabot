@@ -3,11 +3,25 @@ import mongoose from "mongoose";
 import EventsubSchema from "../../schemas/eventsub.schema.js";
 import UsersSchema from "../../schemas/users.schema.js";
 import { EventSchema } from "../../schemas/event.schema.js";
-import { subscribeTwitchEvent, unsubscribeTwitchEvent } from "../../utils/eventsub.js";
+import { AdminSchema } from "../../schemas/admin.schema.js";
+import {
+    CANONICAL_BITS_EVENT_TYPE,
+    canonicalizeEventsubType,
+    getEquivalentEventsubTypes,
+    subscribeTwitchEvent,
+    unsubscribeTwitchEvent
+} from "../../utils/eventsub.js";
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import type { ICheerTiers } from "../../schemas/eventsub.schema.js";
 
 const router = express.Router();
 const NON_DISABLEABLE_EVENT_TYPES = new Set(['stream.online', 'stream.offline']);
+
+interface EventsubRequest extends Request {
+    user?: {
+        id?: string;
+    };
+}
 
 type PlanTier = 'free' | 'premium' | 'pro';
 
@@ -65,13 +79,212 @@ function extractCheerTiers(config: unknown, body: unknown): unknown[] | null {
     return null;
 }
 
-router.get('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+async function getAccess(requesterID: string, channelID: string): Promise<'owner' | 'admin' | 'none'> {
+    if (requesterID === channelID) {
+        return 'owner';
+    }
+
+    const admin = await AdminSchema.findOne({
+        channelID,
+        adminID: requesterID,
+        actived: true,
+        permissions: { $in: ['*', 'dashboard:view', 'settings:view'] }
+    }).lean();
+
+    return admin ? 'admin' : 'none';
+}
+
+function normalizeCheerTiers(value: unknown): ICheerTiers[] | undefined {
+    if (!Array.isArray(value)) {
+        return undefined;
+    }
+
+    const normalized = value
+        .map((tier) => {
+            if (!tier || typeof tier !== 'object') {
+                return null;
+            }
+
+            const candidate = tier as {
+                id?: unknown;
+                name?: unknown;
+                message?: unknown;
+                minAmount?: unknown;
+                maxAmount?: unknown;
+                min_amount?: unknown;
+                max_amount?: unknown;
+            };
+
+            const minAmount = typeof candidate.min_amount === 'number'
+                ? candidate.min_amount
+                : candidate.minAmount;
+            const maxAmount = typeof candidate.max_amount === 'number'
+                ? candidate.max_amount
+                : candidate.maxAmount;
+
+            if (
+                typeof candidate.id !== 'string'
+                || typeof candidate.name !== 'string'
+                || typeof candidate.message !== 'string'
+                || typeof minAmount !== 'number'
+                || !Number.isFinite(minAmount)
+                || typeof maxAmount !== 'number'
+                || !Number.isFinite(maxAmount)
+            ) {
+                return null;
+            }
+
+            return {
+                id: candidate.id,
+                name: candidate.name,
+                message: candidate.message,
+                min_amount: minAmount,
+                max_amount: maxAmount
+            } satisfies ICheerTiers;
+        })
+        .filter((tier): tier is ICheerTiers => tier !== null);
+
+    return normalized;
+}
+
+function normalizeEventsubPayload<T extends Record<string, unknown>>(payload: T): T {
+    const normalizedPayload: Record<string, unknown> = { ...payload };
+
+    if (typeof normalizedPayload.type === 'string') {
+        normalizedPayload.type = canonicalizeEventsubType(normalizedPayload.type);
+    }
+
+    const cheerTiers = normalizeCheerTiers(normalizedPayload.cheerTiers);
+    if (cheerTiers) {
+        normalizedPayload.cheerTiers = cheerTiers;
+    }
+
+    const config = normalizedPayload.config;
+    if (config && typeof config === 'object' && !Array.isArray(config)) {
+        const normalizedConfig: Record<string, unknown> = { ...(config as Record<string, unknown>) };
+        const configCheerTiers = normalizeCheerTiers(normalizedConfig.cheerTiers);
+
+        if (configCheerTiers) {
+            normalizedConfig.cheerTiers = configCheerTiers;
+        }
+
+        normalizedPayload.config = normalizedConfig;
+    }
+
+    return normalizedPayload as T;
+}
+
+async function findEventTemplateByType(type: string) {
+    const normalizedType = canonicalizeEventsubType(type);
+
+    const templates = await EventSchema.find(
+        { type: { $in: getEquivalentEventsubTypes(normalizedType) } },
+        { plan_tier: 1, tierLimits: 1, type: 1 }
+    ).lean() as Array<{
+        type?: string;
+        plan_tier?: PlanTier;
+        tierLimits?: { free?: number; premium?: number; pro?: number };
+    }>;
+
+    return templates.find((template) => template.type === normalizedType)
+        || templates[0]
+        || null;
+}
+
+function normalizeEventsubResponseType<T extends { type?: string }>(eventsub: T): T {
+    if (typeof eventsub.type !== 'string') {
+        return eventsub;
+    }
+
+    return {
+        ...eventsub,
+        type: canonicalizeEventsubType(eventsub.type)
+    };
+}
+
+function getEventsubConfigRichness(eventsub: Record<string, unknown>): number {
+    let score = 0;
+
+    if (eventsub.enabled === false) score += 3;
+    if (typeof eventsub.message === 'string' && eventsub.message.trim().length > 0) score += 3;
+    if (typeof eventsub.endMessage === 'string' && eventsub.endMessage.trim().length > 0) score += 2;
+    if (eventsub.endEnabled === true) score += 1;
+    if (eventsub.clipEnabled === true) score += 1;
+    if (typeof eventsub.minViewers === 'number' && Number.isFinite(eventsub.minViewers) && eventsub.minViewers !== 2) score += 2;
+    if (typeof eventsub.delay === 'number' && Number.isFinite(eventsub.delay) && eventsub.delay !== 0) score += 2;
+    if (Array.isArray(eventsub.cheerTiers) && eventsub.cheerTiers.length > 0) score += 4;
+
+    return score;
+}
+
+function choosePreferredEventsub<T extends { type?: string } & Record<string, unknown>>(current: T | undefined, candidate: T): T {
+    if (!current) {
+        return candidate;
+    }
+
+    const currentType = typeof current.type === 'string' ? current.type : '';
+    const candidateType = typeof candidate.type === 'string' ? candidate.type : '';
+    const currentCanonicalType = canonicalizeEventsubType(currentType);
+    const candidateCanonicalType = canonicalizeEventsubType(candidateType);
+
+    if (currentCanonicalType === CANONICAL_BITS_EVENT_TYPE && candidateCanonicalType === CANONICAL_BITS_EVENT_TYPE) {
+        if (candidateType === CANONICAL_BITS_EVENT_TYPE && currentType !== CANONICAL_BITS_EVENT_TYPE) {
+            return candidate;
+        }
+
+        if (currentType === CANONICAL_BITS_EVENT_TYPE && candidateType !== CANONICAL_BITS_EVENT_TYPE) {
+            return current;
+        }
+    }
+
+    const currentScore = getEventsubConfigRichness(current);
+    const candidateScore = getEventsubConfigRichness(candidate);
+
+    if (candidateScore !== currentScore) {
+        return candidateScore > currentScore ? candidate : current;
+    }
+
+    return candidateType === candidateCanonicalType && currentType !== currentCanonicalType
+        ? candidate
+        : current;
+}
+
+function dedupeNormalizedEventsubs<T extends { type?: string; channelID?: string }>(eventsubs: T[]): T[] {
+    const byKey = new Map<string, T>();
+
+    for (const eventsub of eventsubs) {
+        const key = `${eventsub.channelID || ''}:${canonicalizeEventsubType(typeof eventsub.type === 'string' ? eventsub.type : '')}`;
+        byKey.set(key, choosePreferredEventsub(byKey.get(key), eventsub));
+    }
+
+    return Array.from(byKey.values()).map(normalizeEventsubResponseType);
+}
+
+router.get('/:channelID', authMiddleware as any, async (req: EventsubRequest, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
+            const requesterID = req.user?.id;
             const query = req.query;
             const type = query.type as string | null;
             const id = query.id as string | null;
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unauthorized',
+                    status: 401
+                });
+            }
+
+            const access = await getAccess(requesterID, channelIdStr);
+            if (access === 'none') {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have permission to view eventsubs for this channel',
+                    status: 403
+                });
+            }
 
             let eventsub;
 
@@ -83,11 +296,14 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
                         status: 400
                     });
                 }
-                eventsub = await EventsubSchema.find({ channelID: channelIdStr, _id: id });
+                eventsub = await EventsubSchema.find({ channelID: channelIdStr, _id: id }).lean();
             } else if (type) {
-                eventsub = await EventsubSchema.find({ channelID: channelIdStr, type });
+                eventsub = await EventsubSchema.find({
+                    channelID: channelIdStr,
+                    type: { $in: getEquivalentEventsubTypes(type) }
+                }).lean();
             } else {
-                eventsub = await EventsubSchema.find({ channelID: channelIdStr });
+                eventsub = await EventsubSchema.find({ channelID: channelIdStr }).lean();
             }
 
             if (!eventsub || eventsub.length === 0) {
@@ -100,8 +316,8 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
 
             return res.status(200).send({
                 error: false,
-                data: eventsub,
-                total: eventsub.length
+                data: id ? eventsub.map(normalizeEventsubResponseType) : dedupeNormalizedEventsubs(eventsub),
+                total: id ? eventsub.length : dedupeNormalizedEventsubs(eventsub).length
             });
         } catch (error) {
             console.error('Error in GET /:channelID:', {
@@ -120,15 +336,33 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
         }
     });
 
-    router.post('/:channelID', authMiddleware as any, async (req: Request, res: Response) => {
+    router.post('/:channelID', authMiddleware as any, async (req: EventsubRequest, res: Response) => {
         try {
             const { channelID } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
-            const body = req.body;
+            const requesterID = req.user?.id;
+            const body = normalizeEventsubPayload(req.body as Record<string, unknown>);
             const type = body.type as string;
             const version = body.version as string;
             const condition = body.condition;
-            const config = body.config ?? null;
+            const config = body.config as Record<string, unknown> | undefined;
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unauthorized',
+                    status: 401
+                });
+            }
+
+            const access = await getAccess(requesterID, channelIdStr);
+            if (access === 'none') {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have permission to manage eventsubs for this channel',
+                    status: 403
+                });
+            }
 
             if (!type || !version || !condition) {
                 return res.status(400).send({
@@ -138,15 +372,11 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
                 });
             }
 
+            const normalizedType = canonicalizeEventsubType(type);
+
             const userPlan = await getUserPlanTier(channelIdStr);
 
-            const eventTemplate = await EventSchema.findOne(
-                { type },
-                { plan_tier: 1, tierLimits: 1 }
-            ).lean() as {
-                plan_tier?: PlanTier;
-                tierLimits?: { free?: number; premium?: number; pro?: number };
-            } | null;
+            const eventTemplate = await findEventTemplateByType(normalizedType);
 
             const requiredPlan: PlanTier =
                 eventTemplate?.plan_tier === 'premium' || eventTemplate?.plan_tier === 'pro'
@@ -173,7 +403,7 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
                 }
             }
 
-            const eventsub = await subscribeTwitchEvent(channelIdStr, type, version, condition, config);
+            const eventsub = await subscribeTwitchEvent(channelIdStr, normalizedType, version, condition, config);
 
             if (!eventsub || (eventsub as any).error) {
                 return res.status(400).send({
@@ -204,11 +434,29 @@ router.get('/:channelID', authMiddleware as any, async (req: Request, res: Respo
         }
     });
 
-router.delete('/:channelID/:id', authMiddleware as any, async (req: Request, res: Response) => {
+router.delete('/:channelID/:id', authMiddleware as any, async (req: EventsubRequest, res: Response) => {
         try {
             const { channelID, id } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
             const idStr = Array.isArray(id) ? id[0] : id;
+            const requesterID = req.user?.id;
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unauthorized',
+                    status: 401
+                });
+            }
+
+            const access = await getAccess(requesterID, channelIdStr);
+            if (access === 'none') {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have permission to manage eventsubs for this channel',
+                    status: 403
+                });
+            }
 
             const eventsub = await EventsubSchema.findOne({ channelID: channelIdStr, _id: idStr });
 
@@ -260,11 +508,30 @@ router.delete('/:channelID/:id', authMiddleware as any, async (req: Request, res
         }
     });
 
-router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res: Response) => {
+router.patch('/:channelID/:id', authMiddleware as any, async (req: EventsubRequest, res: Response) => {
         try {
             const { channelID, id } = req.params;
             const channelIdStr = Array.isArray(channelID) ? channelID[0] : channelID;
             const idStr = Array.isArray(id) ? id[0] : id;
+            const requesterID = req.user?.id;
+            const body = normalizeEventsubPayload(req.body as Record<string, unknown>);
+
+            if (!requesterID) {
+                return res.status(401).json({
+                    error: true,
+                    message: 'Unauthorized',
+                    status: 401
+                });
+            }
+
+            const access = await getAccess(requesterID, channelIdStr);
+            if (access === 'none') {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have permission to manage eventsubs for this channel',
+                    status: 403
+                });
+            }
 
             if (!idStr) {
                 return res.status(400).send({
@@ -294,8 +561,8 @@ router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res:
 
             if (
                 NON_DISABLEABLE_EVENT_TYPES.has(eventsub.type) &&
-                Object.prototype.hasOwnProperty.call(req.body, 'enabled') &&
-                req.body.enabled === false
+                Object.prototype.hasOwnProperty.call(body, 'enabled') &&
+                body.enabled === false
             ) {
                 return res.status(403).send({
                     error: true,
@@ -305,13 +572,7 @@ router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res:
             }
 
             const userPlan = await getUserPlanTier(channelIdStr);
-            const eventTemplate = await EventSchema.findOne(
-                { type: eventsub.type },
-                { plan_tier: 1, tierLimits: 1 }
-            ).lean() as {
-                plan_tier?: PlanTier;
-                tierLimits?: { free?: number; premium?: number; pro?: number };
-            } | null;
+            const eventTemplate = await findEventTemplateByType(eventsub.type);
 
             const requiredPlan: PlanTier =
                 eventTemplate?.plan_tier === 'premium' || eventTemplate?.plan_tier === 'pro'
@@ -326,7 +587,7 @@ router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res:
                 });
             }
 
-            const cheerTiers = extractCheerTiers(undefined, req.body);
+            const cheerTiers = extractCheerTiers(undefined, body);
             if (cheerTiers) {
                 const tierLimit = getTierLimitForPlan(eventTemplate?.tierLimits, userPlan);
                 if (cheerTiers.length > tierLimit) {
@@ -340,7 +601,7 @@ router.patch('/:channelID/:id', authMiddleware as any, async (req: Request, res:
 
             const updatedEventsub = await EventsubSchema.findOneAndUpdate(
                 { _id: idStr, channelID: channelIdStr },
-                req.body,
+                body,
                 { new: true }
             ).lean();
 

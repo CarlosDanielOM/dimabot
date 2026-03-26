@@ -11,6 +11,7 @@ import { twitchEventsub } from './eventsub.twitch.js';
 import ChatHistory from '../classes/chat_history.js';
 import { getPolarShClient } from '../utils/polarsh.js';
 import { info } from '../utils/logger.js';
+import { startBotRuntimeMetricsLoop } from '../utils/observability/bot_runtime_metrics.js';
 //? TODO: Add other eventsub imports
 
 const isDev = process.env.NODE_ENV !== 'production';
@@ -27,6 +28,7 @@ await getDragonflyClient('Bot');
 await getMongoDBConnection('Bot');
 await getQdrantConnection('Bot');
 await getPolarShClient('Bot');
+startBotRuntimeMetricsLoop();
 
 // Initialize PubSub for clip queue
 await pubSubManager.init();

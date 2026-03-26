@@ -7,7 +7,9 @@ export interface ITrigger {
     channelID: string;
     rewardID: string;
     file: string;
-    fileID: Types.ObjectId;
+    fileID?: Types.ObjectId | null;
+    assetID?: Types.ObjectId | null;
+    libraryItemID?: Types.ObjectId | null;
     type: string;
     mediaType: string;
     isEnabled: boolean;
@@ -29,8 +31,10 @@ const triggerSchema = new Schema<ITrigger>({
     channelID: { type: String, required: true },
     rewardID: { type: String, required: false },
     file: { type: String, required: true },
-    fileID: { type: Schema.Types.ObjectId, required: true },
-    type: { type: String, default: 'redemption' },
+    fileID: { type: Schema.Types.ObjectId, required: false, default: null },
+    assetID: { type: Schema.Types.ObjectId, required: false, default: null, ref: 'MediaAsset' },
+    libraryItemID: { type: Schema.Types.ObjectId, required: false, default: null, ref: 'UserMediaLibraryItem' },
+    type: { type: String, default: 'trigger' },
     mediaType: { type: String, required: true },
     isEnabled: { type: Boolean, default: true },
     volume: { type: Number, default: 100 },

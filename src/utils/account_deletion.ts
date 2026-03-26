@@ -16,6 +16,7 @@ import { TriggerFileSchema } from '../schemas/trigger_file.schema.js';
 import { TriggerSchema } from '../schemas/trigger.schema.js';
 import UsersSchema from '../schemas/users.schema.js';
 import { unsubscribeTwitchEvent } from './eventsub.js';
+import { cleanupChannelMediaOwnership } from './media_cleanup.js';
 import { decrementSiteAnalytics } from './siteanalytics.js';
 
 export interface IDeleteAccountOptions {
@@ -43,6 +44,10 @@ export interface IDeleteAccountResult {
     streamSummariesDeleted: number;
     adminAssignmentsDeleted: number;
     usersDeleted: number;
+    mediaLibraryItemsRemoved: number;
+    privateAssetsDeleted: number;
+    publicAssetsTransferred: number;
+    mediaAssetCountsUpdated: number;
 }
 
 export async function deleteAccountPermanently(options: IDeleteAccountOptions): Promise<IDeleteAccountResult> {
@@ -110,6 +115,7 @@ export async function deleteAccountPermanently(options: IDeleteAccountOptions): 
     }
 
     const [
+        mediaCleanup,
         triggerFilesDelete,
         clipDesignsDelete,
         titleConfigsDelete,
@@ -120,6 +126,7 @@ export async function deleteAccountPermanently(options: IDeleteAccountOptions): 
         memoriesDelete,
         streamSummariesDelete
     ] = await Promise.all([
+        cleanupChannelMediaOwnership({ channelID, userID }),
         TriggerFileSchema.deleteMany({ channelID }),
         ClipDesignSchema.deleteMany({ channelID }),
         TitleConfigSchema.deleteMany({ channelID }),
@@ -178,7 +185,11 @@ export async function deleteAccountPermanently(options: IDeleteAccountOptions): 
         memoriesDeleted: memoriesDelete.deletedCount ?? 0,
         streamSummariesDeleted: streamSummariesDelete.deletedCount ?? 0,
         adminAssignmentsDeleted: adminsAsAdminDelete.deletedCount ?? 0,
-        usersDeleted: userDelete.deletedCount ?? 0
+        usersDeleted: userDelete.deletedCount ?? 0,
+        mediaLibraryItemsRemoved: mediaCleanup.libraryItemsRemoved,
+        privateAssetsDeleted: mediaCleanup.privateAssetsDeleted,
+        publicAssetsTransferred: mediaCleanup.publicAssetsTransferred,
+        mediaAssetCountsUpdated: mediaCleanup.assetCountsUpdated
     };
 
     console.log('[ACCOUNT_DELETION] Deletion complete', {

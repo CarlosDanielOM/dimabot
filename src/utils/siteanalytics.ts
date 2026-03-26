@@ -12,6 +12,8 @@ const SITE_ANALYTICS_SINGLETON_KEY = 'global';
 
 const ONE_HOUR_MS = 60 * 60 * 1000;
 const LIVE_CHANNELS_REFRESH_MS = 15 * 1000;
+const LIVE_CHANNELS_CACHE_TTL_SECONDS = Math.max(30, Number(process.env.SITE_ANALYTICS_LIVE_CHANNELS_CACHE_TTL_SECONDS || 60));
+const LIVE_CHANNELS_STALE_AFTER_MS = Math.max(LIVE_CHANNELS_REFRESH_MS * 2, Number(process.env.SITE_ANALYTICS_LIVE_CHANNELS_STALE_AFTER_MS || 60_000));
 const PROFILE_CACHE_TTL_SECONDS = 24 * 60 * 60;
 
 let siteAnalyticsPersistenceWorkerStarted = false;
@@ -40,7 +42,7 @@ const FIELD_ALIASES: Record<string, string> = {
     total_live_viewers: 'total_live_viewers'
 };
 
-interface LiveChannelNormalized {
+export interface LiveChannelNormalized {
     channelID: string;
     channel: string;
     streamId: string;
@@ -105,7 +107,17 @@ async function setAnalyticsSnapshot(snapshot: SiteAnalyticsSnapshot): Promise<vo
     await cacheClient.hSet(SITE_ANALYTICS_KEY, ANALYTICS_FIELDS.legacyRegistered, String(snapshot.registeredUsers));
     await cacheClient.hSet(SITE_ANALYTICS_KEY, ANALYTICS_FIELDS.legacyLive, String(snapshot.liveUsers));
     await cacheClient.hSet(SITE_ANALYTICS_KEY, ANALYTICS_FIELDS.legacyActive, String(snapshot.authorizedAccounts));
-    await cacheClient.set(SITE_ANALYTICS_LIVE_CHANNELS_KEY, JSON.stringify(snapshot.liveChannels));
+    await cacheClient.set(SITE_ANALYTICS_LIVE_CHANNELS_KEY, JSON.stringify(snapshot.liveChannels), {
+        EX: LIVE_CHANNELS_CACHE_TTL_SECONDS
+    });
+}
+
+function isLiveChannelFresh(channel: LiveChannelNormalized, maxAgeMs = LIVE_CHANNELS_STALE_AFTER_MS): boolean {
+    const fetchedAt = new Date(channel.fetchedAt || '').getTime();
+    if (!Number.isFinite(fetchedAt) || fetchedAt <= 0) {
+        return false;
+    }
+    return Date.now() - fetchedAt <= Math.max(1, maxAgeMs);
 }
 
 function normalizeLiveChannel(value: unknown): LiveChannelNormalized | null {
@@ -152,12 +164,17 @@ async function readLiveChannelsFromCache(): Promise<LiveChannelNormalized[]> {
     }
 }
 
-export async function getLiveChannelsBoard(): Promise<LiveChannelNormalized[]> {
-    return readLiveChannelsFromCache();
+export async function getLiveChannelsBoard(options?: { requireFresh?: boolean; maxAgeMs?: number }): Promise<LiveChannelNormalized[]> {
+    const channels = await readLiveChannelsFromCache();
+    if (!options?.requireFresh) {
+        return channels;
+    }
+    const maxAgeMs = Math.max(1, Number(options.maxAgeMs || LIVE_CHANNELS_STALE_AFTER_MS));
+    return channels.filter((channel) => isLiveChannelFresh(channel, maxAgeMs));
 }
 
 export async function getLiveChannelsByChannelIdMap(): Promise<Map<string, LiveChannelNormalized>> {
-    const channels = await readLiveChannelsFromCache();
+    const channels = await getLiveChannelsBoard({ requireFresh: true });
     return new Map(channels.map((entry) => [entry.channelID, entry]));
 }
 
@@ -354,7 +371,9 @@ async function refreshLiveChannelsBoard(): Promise<LiveChannelNormalized[]> {
         .sort((a, b) => b.viewers - a.viewers);
 
     const cacheClient = await getDragonflyClient('SiteAnalytics');
-    await cacheClient.set(SITE_ANALYTICS_LIVE_CHANNELS_KEY, JSON.stringify(channels));
+    await cacheClient.set(SITE_ANALYTICS_LIVE_CHANNELS_KEY, JSON.stringify(channels), {
+        EX: LIVE_CHANNELS_CACHE_TTL_SECONDS
+    });
     await cacheClient.hSet(SITE_ANALYTICS_KEY, ANALYTICS_FIELDS.liveUsers, String(channels.length));
     await cacheClient.hSet(SITE_ANALYTICS_KEY, ANALYTICS_FIELDS.legacyLive, String(channels.length));
     await cacheClient.hSet(SITE_ANALYTICS_KEY, 'total_live_viewers', String(channels.reduce((acc, channel) => acc + channel.viewers, 0)));

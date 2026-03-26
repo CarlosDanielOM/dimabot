@@ -435,6 +435,8 @@ export async function getBillingContext(
     const customerId = user.polar_sh_customer_id;
 
     if (!customerId) {
+        const hasReferralDiscountEligibility = Boolean(user.referralCodeUsed);
+
         return {
             planTier: user.plan_tier,
             hasActiveSubscription: false,
@@ -450,7 +452,7 @@ export async function getBillingContext(
                 hasAnySubscriptionHistory: false
             }),
             targetProductId: targetPlan ? PLAN_PRODUCT_MAP[targetPlan] : undefined,
-            isReferralEligible: Boolean(user.referralCodeUsed)
+            isReferralEligible: hasReferralDiscountEligibility
         };
     }
 
@@ -462,6 +464,7 @@ export async function getBillingContext(
     const activeSubscription = activeSubscriptions[0];
     const hasActiveSubscription = Boolean(activeSubscription);
     const hasAnySubscriptionHistory = allSubscriptions.length > 0;
+    const hasReferralDiscountEligibility = Boolean(user.referralCodeUsed) && !hasAnySubscriptionHistory;
     const activeProductId = activeSubscription?.product_id;
     const currentPlan = getCurrentPlanFromActiveSubscription(user.plan_tier, activeProductId);
 
@@ -484,7 +487,7 @@ export async function getBillingContext(
         activeSubscriptionId: activeSubscription?.id,
         activeProductId,
         targetProductId: targetPlan ? PLAN_PRODUCT_MAP[targetPlan] : undefined,
-        isReferralEligible: Boolean(user.referralCodeUsed)
+        isReferralEligible: hasReferralDiscountEligibility
     };
 }
 
@@ -499,7 +502,7 @@ export async function createBillingCheckout(request: CheckoutCreateRequest): Pro
 
     const discountCandidates: Array<{ reason: CheckoutDecision['selectedDiscountReason']; discount: DiscountLike }> = [];
 
-    if ((request.user.referralCodeUsed || request.referralCode) && process.env.POLARSH_REFERRAL_DISCOUNT_ID) {
+    if (context.isReferralEligible && process.env.POLARSH_REFERRAL_DISCOUNT_ID) {
         const referralDiscount = await getDiscountById(process.env.POLARSH_REFERRAL_DISCOUNT_ID);
         if (referralDiscount && isDiscountApplicableToProduct(referralDiscount, targetProductId)) {
             discountCandidates.push({ reason: 'referral', discount: referralDiscount });

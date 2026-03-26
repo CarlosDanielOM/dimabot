@@ -1,13 +1,12 @@
-import { speach } from '../functions/chats/index.js';
 import { error } from '../utils/logger.js';
-
-const linkRegex = new RegExp(/((http|https):\/\/)?(www\.)?[a-zA-Z-]+(\.[a-zA-Z-]{2})+(:\d+)?(\/\S*)?(\?\S+)?/gi);
+import { queueDefaultTts } from '../utils/tts/queue_default_tts.util.js';
 
 interface Tags {
     id: string;
     username: string;
     'display-name': string;
     emotes?: Record<string, string[]>;
+    emoteNames?: string[];
 }
 
 interface SpeechResponse {
@@ -20,10 +19,9 @@ interface SpeechResponse {
 
 export async function speechCommand(channelID: string, tags: Tags, argument?: string): Promise<SpeechResponse> {
     try {
-        const user = tags.username;
-        let message = argument ?? undefined;
+        const rawMessage = argument ?? undefined;
 
-        if (!message) {
+        if (!rawMessage) {
             return {
                 error: true,
                 message: 'No message provided',
@@ -33,33 +31,17 @@ export async function speechCommand(channelID: string, tags: Tags, argument?: st
             };
         }
 
-        const emotesToReplace: string[] = [];
-
-        if (tags.emotes) {
-            for (const emote in tags.emotes) {
-                const emoteData = tags.emotes[emote];
-                emoteData.forEach((emote) => {
-                    const locations = emote.split('-');
-                    const start = parseInt(locations[0]) -3;
-                    const end = parseInt(locations[1]);
-                    const emoteName = message!.substring(start, end - 2);
-                    emotesToReplace.push(emoteName);
-                });
-            }
-
-            emotesToReplace.forEach((emote) => {
-                message = message!.replace(emote, '');
-            });
-        }
-
-        const haslink = message.match(linkRegex);
-        if (haslink) {
-            message = message.replace(linkRegex, "[LINK]");
-        }
-
-        const msg = `${user} dice: ${message}`;
-
-        const speachData = await speach(tags.id, msg, channelID);
+        const speachData = await queueDefaultTts({
+            channelID,
+            rawMessage,
+            source: 'chat-command',
+            userID: tags.id,
+            userLogin: tags.username,
+            userName: tags['display-name'],
+            userLevel: 1,
+            emotes: tags.emotes,
+            emoteNames: tags.emoteNames
+        });
 
         if (speachData.error) {
             return {

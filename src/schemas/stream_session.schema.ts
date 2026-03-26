@@ -19,6 +19,8 @@ export interface IStreamSession {
     subs: number;
     bits: number;
     donations: number;
+    messages: number;
+    commands: number;
     last_seen_live_at: Date | null;
     consecutive_offline_checks: number;
     created_at: Date;
@@ -41,6 +43,8 @@ const streamSessionSchema = new Schema<IStreamSession>({
     subs: { type: Number, default: 0 },
     bits: { type: Number, default: 0 },
     donations: { type: Number, default: 0 },
+    messages: { type: Number, default: 0 },
+    commands: { type: Number, default: 0 },
     last_seen_live_at: { type: Date, default: null },
     consecutive_offline_checks: { type: Number, default: 0 }
 }, {

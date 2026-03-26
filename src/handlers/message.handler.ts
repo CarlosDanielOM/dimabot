@@ -6,12 +6,14 @@ import { router as aiRouter } from "../utils/ai/openrouter/router.ai.js";
 import { handleShoutoutCommand } from "../commands/shoutout.command.js";
 import { formatBadges } from "../utils/badges.js";
 import { error as logError } from "../utils/logger.js";
+import { ChannelAIPersonalitySchema, type IChannelAIPersonality } from "../schemas/channel_ai_personality.schema.js";
 
 import { COOLDOWN } from "../classes/cooldown.class.js";
 import { storeChatMessageEmbeddingBatched } from "../utils/qdrant/functions/chat_logs/store_chat_log.qdrant.js";
 
 const commandsRegex = new RegExp(/^!([\p{L}\p{N}]+)(?:\W@?)?(.*)?$/u);
 const linkRegex = new RegExp(/((http|https):\/\/)?(www\.)?[a-zA-Z-]+(\.[a-zA-Z-]{2})+(:\d+)?(\/\S*)?(\?\S+)?/gi);
+const MODERATOR_BADGE_IDS = new Set(['moderator', 'lead_moderator']);
 
 //? TODO: Import commands
 import { getDragonflyClient } from "../utils/databases/dragonfly.database.js";
@@ -23,6 +25,11 @@ import { indexCommands } from "../commands/index.commands.js";
 import { sendAnnouncement } from "../functions/chats/announcement.chat.js";
 import { clearChat } from "../functions/chats/clear_chat.chat.js";
 import { createCommand, deleteCommand, editCommand } from "../commands/command_manager.command.js";
+import { createTimer, deleteTimer, editTimer, listTimers } from "../commands/timer_manager.command.js";
+import { incrementSiteAnalytics } from "../utils/siteanalytics.js";
+import { recordStreamCommandEvent, recordStreamMessageEvent } from "../utils/stream_analytics.js";
+import { appendAssistantTurnToThread, resolveUserThreadForMessage } from "../utils/ai/threading/thread_router.js";
+import { endMessageHandlerMetric, recordRedisOpsEstimate, startMessageHandlerMetric } from "../utils/observability/bot_runtime_metrics.js";
 
 const modID = '698614112';
 const CHANNEL_INSTANCES = new Map<string, COOLDOWN>();
@@ -31,15 +38,38 @@ let isMod = false;
 let tries = 0;
 
 export const messageHandler = async (channelID: string, messageEventData: IChatMessage) => {
+    const metricTracker = startMessageHandlerMetric();
+    let messageHandlerFailed = false;
     try {
         const STREAMER = await TwitchStreamers.getTwitchAccountById(channelID);
-        const cache = await getDragonflyClient('MessageHandler');
+
+        if (!STREAMER) {
+            return;
+        }
 
         const userLevel = await giveUserLevel(channelID, messageEventData);
 
         const formattedBadges = await formatBadges({ badges: messageEventData.badges });
 
         await ChatHistory.addMessage(channelID, messageEventData.chatter_user_name!, messageEventData.message.text, formattedBadges.badgeList);
+
+        void incrementSiteAnalytics('total_messages', 1).catch((analyticsError) => {
+            console.error('Error incrementing site analytics from message handler:', {
+                function: 'messageHandler.incrementSiteAnalytics',
+                channelID,
+                error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+                timestamp: new Date().toISOString()
+            });
+        });
+
+        void recordStreamMessageEvent({ channelID }).catch((analyticsError) => {
+            console.error('Error recording stream message analytics from message handler:', {
+                function: 'messageHandler.recordStreamMessageEvent',
+                channelID,
+                error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+                timestamp: new Date().toISOString()
+            });
+        });
 
         storeChatMessageEmbeddingBatched({
             channel_id: channelID,
@@ -59,9 +89,10 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
             return;
         }
 
-        if(messageEventData.badges.some(badge => badge.set_id === 'moderator') || messageEventData.chatter_user_id === channelID) isMod = true;
+        if(messageEventData.badges.some(badge => MODERATOR_BADGE_IDS.has(badge.set_id)) || messageEventData.chatter_user_id === channelID) isMod = true;
 
         const [raw, command, argument] = messageEventData.message.text.match(commandsRegex) || [];
+        const streamerArgument = argument ? argument.trim() : '';
 
         const tags = {
             id: messageEventData.chatter_user_id!,
@@ -71,11 +102,133 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
             mod: isMod
         };
 
+        if (['timer', 'timers'].includes(String(command || '').toLowerCase())) {
+            const timerArgs = streamerArgument.split(/\s+/).filter(Boolean);
+            const timerSubCommand = String(timerArgs[0] || '').toLowerCase();
+
+            if (userLevel < 7) {
+                sendTwitchChatMessage(channelID, 'You need moderator permissions to manage timers.');
+                return;
+            }
+
+            const timerPayload = timerArgs.slice(1);
+            let timerResponse: { error: boolean; message: string; status?: number } = {
+                error: true,
+                message: 'Invalid timer command. Usage: !timer <create|edit|delete|list>'
+            };
+
+            switch (timerSubCommand) {
+                case 'create':
+                case 'add': {
+                    const [timerName, timerFrequencyRaw, ...timerMessageParts] = timerPayload;
+                    const timerFrequency = parseTimerFrequencyInput(timerFrequencyRaw);
+                    const timerMessage = timerMessageParts.join(' ').trim();
+                    if (!timerName || !timerFrequencyRaw || !timerMessage || timerFrequency === null) {
+                        timerResponse = {
+                            error: true,
+                            message: 'Usage: !timer create <name> <frequency> <message> (frequency examples: 1, 5m, 1h)'
+                        };
+                        break;
+                    }
+                    timerResponse = await createTimer(channelID, timerName, timerFrequency, timerMessage);
+                    break;
+                }
+                case 'edit':
+                case 'update':
+                case 'modify': {
+                    const [timerName, timerFrequencyRaw, ...timerMessageParts] = timerPayload;
+                    const timerFrequency = parseTimerFrequencyInput(timerFrequencyRaw);
+                    const timerMessage = timerMessageParts.join(' ').trim();
+                    if (!timerName || (!timerFrequencyRaw && !timerMessage)) {
+                        timerResponse = {
+                            error: true,
+                            message: 'Usage: !timer edit <name> <frequency?> <message?>'
+                        };
+                        break;
+                    }
+                    if (timerFrequencyRaw && timerFrequency === null) {
+                        timerResponse = {
+                            error: true,
+                            message: 'Invalid frequency. Use intervals (1, 2, 3) or time format (5m, 1h).'
+                        };
+                        break;
+                    }
+                    timerResponse = await editTimer(
+                        channelID,
+                        timerName,
+                        timerFrequencyRaw ? timerFrequency ?? undefined : undefined,
+                        timerMessage || undefined
+                    );
+                    break;
+                }
+                case 'delete':
+                case 'remove':
+                case 'del': {
+                    const [timerName] = timerPayload;
+                    if (!timerName) {
+                        timerResponse = { error: true, message: 'Usage: !timer delete <name>' };
+                        break;
+                    }
+                    timerResponse = await deleteTimer(channelID, timerName);
+                    break;
+                }
+                case 'list':
+                case 'show':
+                case 'ls': {
+                    timerResponse = await listTimers(channelID);
+                    break;
+                }
+                default:
+                    timerResponse = {
+                        error: true,
+                        message: 'Invalid timer subcommand. Use create, edit, delete, or list.'
+                    };
+            }
+
+            void recordStreamCommandEvent({ channelID }).catch((analyticsError) => {
+                console.error('Error recording stream command analytics from timer command:', {
+                    function: 'messageHandler.recordStreamCommandEvent.timer',
+                    channelID,
+                    command: 'timer',
+                    error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+                    timestamp: new Date().toISOString()
+                });
+            });
+
+            sendTwitchChatMessage(channelID, timerResponse.message);
+            return;
+        }
+
         if(!command) {
             if(messageEventData.message.text.startsWith('@domdimabot') || messageEventData.message.text.startsWith('@DomDimaBot') || messageEventData.message.text.includes('@domdimabot') || messageEventData.message.text.includes('@DomDimaBot')) {
-                if(!STREAMER) return;
+                const aiPersonality = await ChannelAIPersonalitySchema.findOne({ channelID }).lean() as IChannelAIPersonality | null;
+                if (!aiPersonality || !aiPersonality.learningConfig?.enabled) return;
 
                 if (STREAMER.name == 'ozbellvt' || STREAMER.name == 'littlehuntervt') return;
+
+                const planTier = STREAMER.plan_tier === 'pro' || STREAMER.plan_tier === 'premium' ? STREAMER.plan_tier : 'free';
+                let threadID: string | null = null;
+                let threadContext: Array<{ timestamp: number; badges?: string; username: string; message: string }> = [];
+
+                try {
+                    const resolution = await resolveUserThreadForMessage({
+                        channelID,
+                        userID: String(messageEventData.chatter_user_id || 'unknown'),
+                        username: String(messageEventData.chatter_user_name || messageEventData.chatter_user_login || 'unknown'),
+                        message: messageEventData.message.text,
+                        planTier,
+                        sourceMessageId: messageEventData.message_id
+                    });
+                    threadID = resolution.threadID;
+                    threadContext = resolution.promptContext;
+                } catch (threadingError) {
+                    console.error('Error resolving AI thread in message handler:', {
+                        channelID,
+                        userID: messageEventData.chatter_user_id,
+                        error: threadingError instanceof Error ? threadingError.message : String(threadingError),
+                        timestamp: new Date().toISOString()
+                    });
+                }
                 
                 const recentMessages = await ChatHistory.getRecentMessages(channelID, STREAMER.plan_tier === 'pro' ? 15 : 7);
                 const chatHistory = recentMessages.map((msg: any) => ({
@@ -84,12 +237,13 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     username: msg.username,
                     message: msg.message
                 }));
+                const aiHistory = threadContext.length > 0 ? threadContext : chatHistory;
                 
                 const aiResponse = await aiRouter(
                     channelID,
                     messageEventData.message.text.replace('@domdimabot', '').replace('@DomDimaBot', ''),
                     '@preset/router',
-                    chatHistory,
+                    aiHistory,
                     { badges: messageEventData.badges, username: messageEventData.chatter_user_name },
                     [],
                     STREAMER
@@ -97,17 +251,36 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 
                 if (!aiResponse.error && aiResponse.message) {
                     sendTwitchChatMessage(channelID, aiResponse.message);
+                    if (threadID) {
+                        void appendAssistantTurnToThread({
+                            channelID,
+                            threadID,
+                            message: aiResponse.message,
+                            planTier,
+                            sourceMessageId: messageEventData.message_id,
+                            delivered: true
+                        }).catch((threadError) => {
+                            console.error('Error appending assistant turn to thread:', {
+                                channelID,
+                                threadID,
+                                error: threadError instanceof Error ? threadError.message : String(threadError),
+                                timestamp: new Date().toISOString()
+                            });
+                        });
+                    }
                 }
             }
+
+            return;
         }
 
         let commandFunc = 'none';
         let commandCD = '0';
         let commandEnabled = 'false';
         let commandLevel = '0';
-        const streamerArgument = argument ? argument.trim() : '';
 
         let commandDBData = await Commands.getCommandFromDB(channelID, command);
+        recordRedisOpsEstimate(1);
         if(!commandDBData.error && commandDBData.command) {
             commandFunc = commandDBData.command.func ?? 'none';
             commandCD = String(commandDBData.command.cooldown ?? 0);
@@ -126,6 +299,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
 
         if(on_cooldown) return;
         
+        const shouldTrackCommandUsage = !commandDBData.error && !!commandDBData.command;
         let res = null;
         
         switch(commandFunc) {
@@ -331,6 +505,24 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                     res = { error: false, message: onlyEmotesResult.message };
                 }
                 break;
+            case 'speach':
+            case 'speech':
+                const speechResult = await indexCommands.speech(channelID, {
+                    id: messageEventData.chatter_user_id || '',
+                    username: messageEventData.chatter_user_login || '',
+                    'display-name': messageEventData.chatter_user_name || messageEventData.chatter_user_login || '',
+                    emoteNames: (messageEventData.message.fragments || [])
+                        .filter((fragment) => fragment.type === 'emote' && typeof fragment.text === 'string')
+                        .map((fragment) => fragment.text)
+                }, streamerArgument);
+                if (command === 's') {
+                    res = null;
+                } else if (speechResult.error) {
+                    res = { error: true, message: speechResult.message || 'Error enviando TTS' };
+                } else {
+                    res = { error: false, message: speechResult.message };
+                }
+                break;
 
             case 'vanish':
                 const vanishResult = await indexCommands.vanish(channelID, tags, modID);
@@ -464,6 +656,18 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
                 break;
             }
 
+        if (shouldTrackCommandUsage) {
+            void recordStreamCommandEvent({ channelID }).catch((analyticsError) => {
+                console.error('Error recording stream command analytics from message handler:', {
+                    function: 'messageHandler.recordStreamCommandEvent',
+                    channelID,
+                    command,
+                    error: analyticsError instanceof Error ? analyticsError.message : String(analyticsError),
+                    timestamp: new Date().toISOString()
+                });
+            });
+        }
+
         if(commandCD !== '0') {
             channelInstance!.setCooldown(command, parseInt(commandCD! ?? '0', 10));
         }
@@ -484,10 +688,13 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
 
         sendTwitchChatMessage(channelID, res.message)
     } catch (err) {
+        messageHandlerFailed = true;
         await logError({
             function: 'messageHandler',
             error: err instanceof Error ? err.message : String(err)
         }, { channelId: channelID, destination: 'both' });
+    } finally {
+        endMessageHandlerMetric(metricTracker, messageHandlerFailed);
     }
 }
 
@@ -507,16 +714,18 @@ async function giveUserLevel(channelID: string, messageEventData: IChatMessage) 
         userLevel = 6;
     }
 
-    if(messageEventData.badges.some(badge => badge.set_id === 'moderator')) {
+    if(messageEventData.badges.some(badge => MODERATOR_BADGE_IDS.has(badge.set_id))) {
         userLevel = 7;
     }
 
     const isEditor = await cache.sIsMember(`${channelID}:channel:editors`, messageEventData.chatter_user_login!);
+    recordRedisOpsEstimate(1);
     if(isEditor) {
         userLevel = 8;
     }
 
     const isAdmin = await cache.sIsMember(`${channelID}:admins`, messageEventData.chatter_user_login!);
+    recordRedisOpsEstimate(1);
     if(isAdmin) {
         userLevel = 9;
     }
@@ -526,4 +735,42 @@ async function giveUserLevel(channelID: string, messageEventData: IChatMessage) 
     }
 
     return userLevel;
+}
+
+function parseTimerFrequencyInput(rawValue: string | undefined): number | null {
+    if (!rawValue) {
+        return null;
+    }
+
+    const normalized = String(rawValue).trim().toLowerCase();
+    if (!normalized) {
+        return null;
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        const parsed = Number.parseInt(normalized, 10);
+        return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    const match = normalized.match(/^(\d+)([mh])$/);
+    if (!match) {
+        return null;
+    }
+
+    const amount = Number.parseInt(match[1], 10);
+    const unit = match[2];
+
+    if (!Number.isInteger(amount) || amount <= 0) {
+        return null;
+    }
+
+    if (unit === 'm') {
+        return Math.max(1, Math.floor(amount / 5));
+    }
+
+    if (unit === 'h') {
+        return amount * 12;
+    }
+
+    return null;
 }

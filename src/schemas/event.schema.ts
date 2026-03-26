@@ -12,10 +12,12 @@ export interface IEventConfigShowIf {
 
 export interface IEventConfig {
     id: string;
+    dbId?: string;
     label: IEventConfigLabel;
     type: 'text' | 'number' | 'checkbox' | 'select' | 'message-tiers';
     value: any;
     canDisable: boolean;
+    placeholder?: string;
     showIf?: IEventConfigShowIf;
 }
 
@@ -117,6 +119,11 @@ const eventSchema = new Schema<IEvent>({
                 required: true,
                 trim: true,
             },
+            dbId: {
+                type: String,
+                required: false,
+                trim: true,
+            },
             label: {
                 EN: {
                     type: String,
@@ -142,6 +149,11 @@ const eventSchema = new Schema<IEvent>({
             canDisable: {
                 type: Boolean,
                 default: false,
+            },
+            placeholder: {
+                type: String,
+                required: false,
+                trim: true,
             },
             showIf: {
                 type: new Schema(

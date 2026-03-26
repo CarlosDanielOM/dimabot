@@ -66,10 +66,18 @@ export function printAst(node: AstNode, indent: number = 0): string {
             
         case 'getVar':
             output += `${prefix}GetVar("${node.name}")\n`;
+            if (node.userSelector) {
+                output += `${prefix}  userSelector:\n`;
+                output += printAst(node.userSelector, indent + 2);
+            }
             break;
             
         case 'exists':
             output += `${prefix}Exists("${node.name}")\n`;
+            if (node.userSelector) {
+                output += `${prefix}  userSelector:\n`;
+                output += printAst(node.userSelector, indent + 2);
+            }
             break;
             
         case 'function':

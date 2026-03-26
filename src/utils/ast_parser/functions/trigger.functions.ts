@@ -1,12 +1,62 @@
 import { registerFunction, type FunctionHandler } from '../evaluator.js';
 import { TriggerSchema } from '../../../schemas/trigger.schema.js';
-import { TriggerFileSchema } from '../../../schemas/trigger_file.schema.js';
+import { MediaAssetSchema } from '../../../schemas/media_asset.schema.js';
+import { UserMediaLibraryItemSchema } from '../../../schemas/user_media_library_item.schema.js';
 import { sendTrigger } from '../../../functions/triggers/send_trigger.trigger.js';
+import { buildMediaPlaybackUrl } from '../../../server/services/media_library.service.js';
 
 function parseQueueFlag(raw: unknown): boolean | null {
     const normalized = String(raw).trim().toLowerCase();
     if (normalized === 'true') return true;
     if (normalized === 'false') return false;
+    return null;
+}
+
+async function resolveTriggerPlaybackAsset(trigger: {
+    channelID: string;
+    file: string;
+    fileID?: unknown;
+    assetID?: unknown;
+    libraryItemID?: unknown;
+    mediaType: string;
+}): Promise<{ fileUrl: string; fileType: string } | null> {
+    if (trigger.libraryItemID) {
+        const libraryItem = await UserMediaLibraryItemSchema.findOne({
+            _id: trigger.libraryItemID,
+            channelID: trigger.channelID,
+            isActive: true,
+            deletedAt: null
+        }).lean();
+
+        if (libraryItem) {
+            const asset = await MediaAssetSchema.findOne({
+                _id: libraryItem.assetID,
+                deletedAt: null
+            }).lean();
+
+            if (asset) {
+                return {
+                    fileUrl: buildMediaPlaybackUrl(asset._id),
+                    fileType: asset.mimeType
+                };
+            }
+        }
+    }
+
+    if (trigger.assetID) {
+        const asset = await MediaAssetSchema.findOne({
+            _id: trigger.assetID,
+            deletedAt: null
+        }).lean();
+
+        if (asset) {
+            return {
+                fileUrl: buildMediaPlaybackUrl(asset._id),
+                fileType: asset.mimeType
+            };
+        }
+    }
+
     return null;
 }
 
@@ -33,8 +83,7 @@ const triggerSendHandler: FunctionHandler = async (args, ctx) => {
 
     const trigger = await TriggerSchema.findOne({
         channelID: ctx.broadcasterId,
-        name: triggerName,
-        type: 'redemption'
+        name: triggerName
     });
 
     if (!trigger) {
@@ -45,10 +94,7 @@ const triggerSendHandler: FunctionHandler = async (args, ctx) => {
         return `Trigger is disabled: ${triggerName}`;
     }
 
-    const file = await TriggerFileSchema.findOne({
-        _id: trigger.fileID,
-        channelID: ctx.broadcasterId
-    });
+    const file = await resolveTriggerPlaybackAsset(trigger);
 
     if (!file) {
         return `Trigger file not found: ${trigger.file}`;

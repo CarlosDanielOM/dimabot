@@ -20,98 +20,161 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
     <script>
         const channelID = window.location.pathname.split('/')[3];
+        const searchParams = new URLSearchParams(window.location.search);
+        const isPreview = searchParams.get('preview') === '1';
         const triggerContainer = document.getElementById('triggerContainer');
 
-        const socket = io(`/overlays/triggers/${channelID}`, {
-            reconnection: true,
-            reconnectionAttempts: Infinity,
-            reconnectionDelay: 1000,
-            reconnectionDelayMax: 5000
-        });
-
-        setInterval(() => {
-            socket.emit('ping', { channelID });
-        }, 1000);
-
-        socket.on('connect_error', (error) => {
-            console.log('Error:', error);
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage({
-                    type: 'trigger-overlay-error',
-                    message: error?.message || 'Failed to connect to trigger websocket'
-                }, '*');
-            }
-        });
-
-        socket.on('connect', () => {
-            console.log('Connected to triggers');
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage({
-                    type: 'trigger-overlay-connected',
-                    channelID
-                }, '*');
-            }
-        });
-
-        socket.on('disconnect', (reason) => {
-            console.log('Disconnected from triggers:', reason);
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage({
-                    type: 'trigger-overlay-error',
-                    message: `Trigger overlay disconnected: ${reason}`
-                }, '*');
-            }
-        });
-
-        socket.io.on('reconnect_attempt', (attempt) => {
-            console.log('Trigger reconnect attempt:', attempt);
-        });
-
-        socket.io.on('reconnect', (attempt) => {
-            console.log('Trigger reconnected:', attempt);
-            if (window.parent && window.parent !== window) {
-                window.parent.postMessage({
-                    type: 'trigger-overlay-connected',
-                    channelID
-                }, '*');
-            }
-        });
-
-        socket.on('error', (error) => {
-            console.log({error});
-            console.log('Error:', error);
-        });
-
         let triggerCount = 0;
+        let socket = null;
+        let heartbeatIntervalId = null;
 
-        socket.on('trigger', (data) => {
+        function renderTrigger(data) {
             triggerCount++;
-            const { mediaType, url, volume } = data;
-            let triggerType = mediaType.split('/')[0];
-            if(triggerType === 'video') {
-                let videoPlayer = createVideoPlayer(url, volume);
-                triggerContainer.appendChild(videoPlayer);
+            const { mediaType, url, volume } = data || {};
+
+            if (!mediaType || !url) {
+                return;
             }
+
+            const triggerType = mediaType.split('/')[0];
+            if (triggerType === 'video') {
+                triggerContainer.appendChild(createVideoPlayer(url, mediaType, volume));
+                return;
+            }
+
+            if (triggerType === 'audio') {
+                document.body.appendChild(createAudioPlayer(url, mediaType, volume));
+            }
+        }
+
+        function cleanupSocket() {
+            if (heartbeatIntervalId !== null) {
+                window.clearInterval(heartbeatIntervalId);
+                heartbeatIntervalId = null;
+            }
+
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        if (!isPreview) {
+            socket = io(`/overlays/triggers/${channelID}`, {
+                reconnection: true,
+                reconnectionAttempts: Infinity,
+                reconnectionDelay: 1000,
+                reconnectionDelayMax: 5000
+            });
+
+            heartbeatIntervalId = window.setInterval(() => {
+                socket.emit('ping', { channelID });
+            }, 1000);
+
+            socket.on('connect_error', (error) => {
+                console.log('Error:', error);
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'trigger-overlay-error',
+                        message: error?.message || 'Failed to connect to trigger websocket'
+                    }, '*');
+                }
+            });
+
+            socket.on('connect', () => {
+                console.log('Connected to triggers');
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'trigger-overlay-connected',
+                        channelID
+                    }, '*');
+                }
+            });
+
+            socket.on('disconnect', (reason) => {
+                console.log('Disconnected from triggers:', reason);
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'trigger-overlay-error',
+                        message: `Trigger overlay disconnected: ${reason}`
+                    }, '*');
+                }
+            });
+
+            socket.io.on('reconnect_attempt', (attempt) => {
+                console.log('Trigger reconnect attempt:', attempt);
+            });
+
+            socket.io.on('reconnect', (attempt) => {
+                console.log('Trigger reconnected:', attempt);
+                if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({
+                        type: 'trigger-overlay-connected',
+                        channelID
+                    }, '*');
+                }
+            });
+
+            socket.on('error', (error) => {
+                console.log({error});
+                console.log('Error:', error);
+            });
+
+            socket.on('trigger', renderTrigger);
+            window.addEventListener('beforeunload', cleanupSocket);
+        }
+
+        window.addEventListener('message', (event) => {
+            if (!isPreview || !event.data || event.data.type !== 'trigger-preview') {
+                return;
+            }
+
+            renderTrigger(event.data.payload);
         });
 
-        function createVideoPlayer(url, volume) {
-            let randomX = Math.floor(Math.random() * (1000 - 700));
-            let randomY = Math.floor(Math.random() * (600 - 500));
-            let videoPlayer = document.createElement('video');
+        function createVideoPlayer(url, mediaType, volume) {
+            const videoPlayer = document.createElement('video');
             videoPlayer.style.position = 'fixed';
-            videoPlayer.style.top = `0px`;
-            videoPlayer.style.left = `0px`;
+            videoPlayer.style.top = '0px';
+            videoPlayer.style.left = '0px';
             videoPlayer.setAttribute('width', '1000px');
             videoPlayer.setAttribute('autoplay', 'true');
-            videoPlayer.setAttribute('id', triggerCount);
-            videoPlayer.volume = (volume / 100);
-            videoPlayer.innerHTML = `<source src="${url}" type="video/mp4" />`;
+            videoPlayer.setAttribute('playsinline', 'true');
+            videoPlayer.setAttribute('id', String(triggerCount));
+            videoPlayer.volume = Number.isFinite(volume) ? (volume / 100) : 1;
+            videoPlayer.src = url;
+            videoPlayer.type = mediaType;
 
             videoPlayer.addEventListener('ended', () => {
                 videoPlayer.remove();
             });
 
+            videoPlayer.addEventListener('error', () => {
+                console.log('Error playing trigger video', { url, mediaType });
+                videoPlayer.remove();
+            });
+
             return videoPlayer;
+        }
+
+        function createAudioPlayer(url, mediaType, volume) {
+            const audioPlayer = document.createElement('audio');
+            audioPlayer.setAttribute('autoplay', 'true');
+            audioPlayer.setAttribute('id', String(triggerCount));
+            audioPlayer.volume = Number.isFinite(volume) ? (volume / 100) : 1;
+            audioPlayer.src = url;
+            audioPlayer.type = mediaType;
+
+            audioPlayer.addEventListener('ended', () => {
+                audioPlayer.remove();
+            });
+
+            audioPlayer.addEventListener('error', () => {
+                console.log('Error playing trigger audio', { url, mediaType });
+                audioPlayer.remove();
+            });
+
+            return audioPlayer;
         }
     </script>
 </body>

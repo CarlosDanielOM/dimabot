@@ -9,6 +9,8 @@ export interface IStreamViewerSnapshot {
     viewers: number;
     title: string;
     game_name: string;
+    messages: number;
+    commands: number;
     created_at: Date;
     updated_at: Date;
 }
@@ -20,7 +22,9 @@ const streamViewerSnapshotSchema = new Schema<IStreamViewerSnapshot>({
     captured_at: { type: Date, required: true, index: true },
     viewers: { type: Number, required: true, min: 0 },
     title: { type: String, default: '' },
-    game_name: { type: String, default: '' }
+    game_name: { type: String, default: '' },
+    messages: { type: Number, default: 0, min: 0 },
+    commands: { type: Number, default: 0, min: 0 }
 }, {
     timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' }
 });

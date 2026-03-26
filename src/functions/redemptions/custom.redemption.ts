@@ -29,7 +29,7 @@ export async function customRedemptionReward(eventData: EventData, rewardData: R
     try {
         const { broadcaster_user_id, broadcaster_user_login } = eventData;
 
-        const reward = await RedemptionRewardSchema.findOne({ channelID: broadcaster_user_id, rewardID: rewardData.id, type: 'custom' });
+        const reward = await RedemptionRewardSchema.findOne({ channelID: broadcaster_user_id, rewardID: rewardData.id });
         if (!reward) {
             return { error: true, message: 'Reward not found', status: 404, type: 'reward_not_found' };
         }

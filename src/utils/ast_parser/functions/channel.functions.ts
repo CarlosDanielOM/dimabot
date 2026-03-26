@@ -6,6 +6,8 @@ import { searchCategories } from '../../../functions/search/index.js';
 import { createPrediction } from '../../../functions/predictions/index.js';
 import { createPoll } from '../../../functions/polls/index.js';
 import TwitchStreamers from '../../../classes/twitch_streamers.class.js';
+import { executeAiCommand } from '../../../utils/ai/openrouter/command.ai.js';
+import { formatBadges, type IBadge } from '../../../utils/badges.js';
 
 function parseRawArgument(args: unknown[], fallback?: string): string {
     if (args.length > 0) {
@@ -136,8 +138,31 @@ const adHandler: FunctionHandler = async (_args, ctx) => {
     return '0';
 };
 
-const aiHandler: FunctionHandler = async (_args, _ctx) => {
-    return '⚠️ This feature is being implemented';
+const aiHandler: FunctionHandler = async (args, ctx) => {
+    const prompt = parseRawArgument(args, ctx.argument);
+    if (!prompt) {
+        return '[AI: No prompt provided]';
+    }
+
+    const streamer = await TwitchStreamers.getTwitchAccountById(ctx.broadcasterId);
+    if (!streamer) {
+        return '[AI: Streamer context unavailable]';
+    }
+
+    const eventData = ctx.eventData as { badges?: IBadge[] } | undefined;
+    const badgeFormatting = await formatBadges({
+        badges: Array.isArray(eventData?.badges) ? eventData.badges : []
+    });
+
+    const result = await executeAiCommand({
+        ...streamer,
+        user_id: streamer.id
+    }, {
+        username: ctx.userDisplayName || ctx.userLogin || 'unknown user',
+        badges: badgeFormatting.formattedBadges
+    }, prompt, 'ast_parser');
+
+    return result.message;
 };
 
 export function registerChannelFunctions(): void {

@@ -1,6 +1,7 @@
 import express, { type Request, type Response } from "express";
 import { Types } from 'mongoose';
 import { authMiddleware } from "../../middleware/auth.middleware.js";
+import { AdminSchema } from '../../schemas/admin.schema.js';
 import UsersSchema, { type IUsers } from "../../schemas/users.schema.js";
 import { ReferralCodeSchema } from "../../schemas/referral_code.schema.js";
 import {
@@ -10,12 +11,41 @@ import {
     getReferralStats,
     getUserPlanType,
     REFERRAL_CODE_LIMITS,
-    type PlanType
+        type PlanType
 } from "../../utils/referral.js";
 
-async function getAuthenticatedUser(req: Request): Promise<IUsers | null> {
+type ReferralAccessRole = 'owner' | 'admin' | 'none';
+
+function getRequesterID(req: Request): string {
     const authReq = req as Request & { user?: { id?: string } };
-    const twitchUserId = authReq.user?.id;
+    return authReq.user?.id || '';
+}
+
+function getSingleValue(input: unknown): string {
+    if (Array.isArray(input)) {
+        return typeof input[0] === 'string' ? input[0] : '';
+    }
+
+    return typeof input === 'string' ? input : '';
+}
+
+function getTargetChannelID(req: Request): string {
+    const queryChannelID = getSingleValue(req.query.channelID).trim();
+    if (queryChannelID) {
+        return queryChannelID;
+    }
+
+    const body = req.body && typeof req.body === 'object' ? req.body as Record<string, unknown> : null;
+    const bodyChannelID = getSingleValue(body?.channelID).trim();
+    if (bodyChannelID) {
+        return bodyChannelID;
+    }
+
+    return getRequesterID(req);
+}
+
+async function getAuthenticatedUser(req: Request): Promise<IUsers | null> {
+    const twitchUserId = getRequesterID(req);
 
     if (!twitchUserId) {
         return null;
@@ -33,11 +63,71 @@ async function getAuthenticatedUser(req: Request): Promise<IUsers | null> {
     return user;
 }
 
+async function getUserByTwitchUserId(twitchUserId: string): Promise<IUsers | null> {
+    if (!twitchUserId) {
+        return null;
+    }
+
+    return UsersSchema.findOne({
+        accounts: {
+            $elemMatch: {
+                type: 'twitch',
+                id: twitchUserId
+            }
+        }
+    });
+}
+
+async function getReferralAccessContext(
+    requesterID: string,
+    channelID: string,
+    mode: 'view' | 'manage'
+): Promise<{ allowed: boolean; role: ReferralAccessRole }> {
+    if (!requesterID || !channelID) {
+        return { allowed: false, role: 'none' };
+    }
+
+    if (requesterID === channelID) {
+        return { allowed: true, role: 'owner' };
+    }
+
+    if (mode === 'manage') {
+        return { allowed: false, role: 'none' };
+    }
+
+    const admin = await AdminSchema.findOne({
+        channelID,
+        adminID: requesterID,
+        actived: true,
+        permissions: { $in: ['*', 'dashboard:view'] }
+    }).lean();
+
+    if (admin) {
+        return { allowed: true, role: 'admin' };
+    }
+
+    return { allowed: false, role: 'none' };
+}
+
 const router = express.Router();
 
 router.get('/stats', authMiddleware as any, async (req: Request, res: Response) => {
         try {
-            const user = await getAuthenticatedUser(req);
+            const requesterID = getRequesterID(req);
+            const targetChannelID = getTargetChannelID(req);
+            const accessContext = await getReferralAccessContext(requesterID, targetChannelID, 'view');
+
+            if (!accessContext.allowed) {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have access to view referral codes for this channel',
+                    status: 403
+                });
+            }
+
+            const user = targetChannelID === requesterID
+                ? await getAuthenticatedUser(req)
+                : await getUserByTwitchUserId(targetChannelID);
 
             if (!user) {
                 return res.status(404).json({
@@ -53,10 +143,15 @@ router.get('/stats', authMiddleware as any, async (req: Request, res: Response) 
                 error: false,
                 message: 'Referral stats fetched successfully',
                 status: 200,
-                data: stats
+                data: {
+                    ...stats,
+                    channelID: targetChannelID,
+                    role: accessContext.role
+                }
             });
         } catch (error) {
             console.error('Error in GET /stats:', {
+                channelID: getTargetChannelID(req),
                 error: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined,
                 timestamp: new Date().toISOString()
@@ -72,7 +167,21 @@ router.get('/stats', authMiddleware as any, async (req: Request, res: Response) 
 
 router.get('/codes', authMiddleware as any, async (req: Request, res: Response) => {
         try {
-            const user = await getAuthenticatedUser(req);
+            const requesterID = getRequesterID(req);
+            const targetChannelID = getTargetChannelID(req);
+            const accessContext = await getReferralAccessContext(requesterID, targetChannelID, 'view');
+
+            if (!accessContext.allowed) {
+                return res.status(403).json({
+                    error: true,
+                    message: 'You do not have access to view referral codes for this channel',
+                    status: 403
+                });
+            }
+
+            const user = targetChannelID === requesterID
+                ? await getAuthenticatedUser(req)
+                : await getUserByTwitchUserId(targetChannelID);
 
             if (!user) {
                 return res.status(404).json({
@@ -94,11 +203,14 @@ router.get('/codes', authMiddleware as any, async (req: Request, res: Response) 
                     codes,
                     planType,
                     limit,
-                    remaining: limit - codes.length
+                    remaining: limit - codes.length,
+                    channelID: targetChannelID,
+                    role: accessContext.role
                 }
             });
         } catch (error) {
             console.error('Error in GET /codes:', {
+                channelID: getTargetChannelID(req),
                 error: error instanceof Error ? error.message : String(error),
                 stack: error instanceof Error ? error.stack : undefined,
                 timestamp: new Date().toISOString()
@@ -114,7 +226,21 @@ router.get('/codes', authMiddleware as any, async (req: Request, res: Response) 
 
 router.post('/codes', authMiddleware as any, async (req: Request, res: Response) => {
         try {
-            const user = await getAuthenticatedUser(req);
+            const requesterID = getRequesterID(req);
+            const targetChannelID = getTargetChannelID(req);
+            const accessContext = await getReferralAccessContext(requesterID, targetChannelID, 'manage');
+
+            if (!accessContext.allowed) {
+                return res.status(403).json({
+                    error: true,
+                    message: 'Only the channel owner can create referral codes',
+                    status: 403
+                });
+            }
+
+            const user = targetChannelID === requesterID
+                ? await getAuthenticatedUser(req)
+                : await getUserByTwitchUserId(targetChannelID);
 
             if (!user) {
                 return res.status(404).json({
@@ -178,7 +304,21 @@ router.post('/codes', authMiddleware as any, async (req: Request, res: Response)
 
 router.delete('/codes/:codeId', authMiddleware as any, async (req: Request, res: Response) => {
         try {
-            const user = await getAuthenticatedUser(req);
+            const requesterID = getRequesterID(req);
+            const targetChannelID = getTargetChannelID(req);
+            const accessContext = await getReferralAccessContext(requesterID, targetChannelID, 'manage');
+
+            if (!accessContext.allowed) {
+                return res.status(403).json({
+                    error: true,
+                    message: 'Only the channel owner can delete referral codes',
+                    status: 403
+                });
+            }
+
+            const user = targetChannelID === requesterID
+                ? await getAuthenticatedUser(req)
+                : await getUserByTwitchUserId(targetChannelID);
 
             if (!user) {
                 return res.status(404).json({
