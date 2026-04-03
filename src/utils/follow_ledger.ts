@@ -197,6 +197,8 @@ async function fetchFollowersPage(
             operation: 'fetch_followers_page',
             channelID,
             context: { cursor },
+            requestUrl: getTwitchHelixUrl('channels/followers', params.toString()),
+            requestMethod: 'GET',
             executeRequest: async (headers) => fetch(getTwitchHelixUrl('channels/followers', params.toString()), {
                 method: 'GET',
                 headers: headers as Record<string, string>
@@ -258,6 +260,8 @@ async function fetchFollowedPage(
             operation: 'fetch_followed_page',
             channelID,
             context: { cursor },
+            requestUrl: getTwitchHelixUrl('channels/followed', params.toString()),
+            requestMethod: 'GET',
             executeRequest: async (headers) => fetch(getTwitchHelixUrl('channels/followed', params.toString()), {
                 method: 'GET',
                 headers: headers as Record<string, string>

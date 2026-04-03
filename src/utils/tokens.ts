@@ -3,6 +3,7 @@ import TwitchStreamers from "../classes/twitch_streamers.class.js";
 import UsersSchema, { type IUsers } from "../schemas/users.schema.js";
 import { encrypt } from "./crypto.js";
 import { getTwitchOAuthUrl } from "./links.js";
+import { cacheOAuthTokenRefreshFailure } from "./oauth_debug_cache.js";
 
 const BOT_USER_ID = '698614112';
 let count = 0;
@@ -120,7 +121,11 @@ export const refreshAllTokens = async () => {
     });
 }
 
-export const refreshTwitchToken = async (refresh_token: string, user_id: string): Promise<RefreshTwitchTokenResult> => {
+export const refreshTwitchToken = async (
+    refresh_token: string,
+    user_id: string,
+    context?: { endpoint?: string; url?: string }
+): Promise<RefreshTwitchTokenResult> => {
     try {
         const cache = await getDragonflyClient('Tokens');
         
@@ -174,6 +179,18 @@ export const refreshTwitchToken = async (refresh_token: string, user_id: string)
                 failureKind,
                 response: refreshTokenData,
                 timestamp: new Date().toISOString()
+            });
+
+            await cacheOAuthTokenRefreshFailure({
+                timestamp: new Date().toISOString(),
+                userID: user_id,
+                refreshTokenPrefix: refresh_token.slice(0, 8),
+                failureKind,
+                failureReason: message,
+                status: twitchRefreshResponse.status,
+                responseBody: responseText,
+                endpoint: context?.endpoint || 'unknown',
+                url: context?.url || getTwitchOAuthUrl('token', params.toString())
             });
 
             if (failureKind === 'permanent_failure') {

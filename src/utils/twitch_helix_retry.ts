@@ -1,5 +1,6 @@
 import { error as logError, warn as logWarn } from './logger.js';
 import { getTwitchAppHeader, getTwitchBotHeader, getTwitchStreamerHeaderById } from './header.js';
+import { cacheOAuthAPIFailure } from './oauth_debug_cache.js';
 
 const DEFAULT_RETRY_DELAYS_MS = [1000, 3000, 5000];
 
@@ -14,6 +15,9 @@ interface HelixRetryOptions {
     retryDelaysMs?: number[];
     executeRequest: () => Promise<Response>;
     onUnauthorized: (attempt: number) => Promise<void>;
+    requestUrl?: string;
+    requestMethod?: string;
+    requestHeaders?: Record<string, string>;
 }
 
 async function executeHelixRequestWith401Retry(options: HelixRetryOptions): Promise<Response> {
@@ -63,6 +67,23 @@ async function executeHelixRequestWith401Retry(options: HelixRetryOptions): Prom
             retriesAttempted: retryDelays.length,
             ...options.context
         }, { destination: 'both' });
+
+        const clonedResponse = response.clone();
+        const responseBody = await clonedResponse.text().catch(() => 'Unable to read response body');
+        await cacheOAuthAPIFailure({
+            timestamp: new Date().toISOString(),
+            endpoint: options.requestUrl ? new URL(options.requestUrl).pathname.split('/').filter(Boolean).slice(-1)[0] || 'unknown' : 'unknown',
+            url: options.requestUrl || 'unknown',
+            method: options.requestMethod || 'GET',
+            headers: options.requestHeaders || {},
+            clientId: options.requestHeaders?.['Client-Id'] || process.env.CLIENT_ID || 'unknown',
+            responseStatus: response.status,
+            responseBody,
+            worker: options.worker,
+            operation: options.operation,
+            channelID: options.context?.channelID as string || undefined,
+            context: options.context
+        });
     }
 
     return response;
@@ -74,6 +95,8 @@ interface HelixAppRetryOptions {
     context?: Record<string, unknown>;
     retryDelaysMs?: number[];
     executeRequest: (header: Record<string, string>) => Promise<Response>;
+    requestUrl?: string;
+    requestMethod?: string;
 }
 
 interface HelixAppRetryResult {
@@ -95,7 +118,10 @@ export async function executeHelixAppRequestWith401Retry(options: HelixAppRetryO
             executeRequest: async () => options.executeRequest(header as unknown as Record<string, string>),
             onUnauthorized: async () => {
                 header = await getTwitchAppHeader();
-            }
+            },
+            requestUrl: options.requestUrl,
+            requestMethod: options.requestMethod,
+            requestHeaders: header as unknown as Record<string, string>
         });
 
         return { error: false, response };
@@ -124,6 +150,8 @@ interface HelixBotRetryOptions {
     retryDelaysMs?: number[];
     unauthorizedStatus?: number;
     executeRequest: (header: Record<string, string>) => Promise<Response>;
+    requestUrl?: string;
+    requestMethod?: string;
 }
 
 interface HelixBotRetryResult {
@@ -155,7 +183,10 @@ export async function executeHelixBotRequestWith401Retry(options: HelixBotRetryO
             if (!refreshedHeader.error && refreshedHeader.header) {
                 headerResult = refreshedHeader;
             }
-        }
+        },
+        requestUrl: options.requestUrl,
+        requestMethod: options.requestMethod,
+        requestHeaders: headerResult.header as unknown as Record<string, string>
     });
 
     return { error: false, response };
@@ -169,6 +200,8 @@ interface HelixStreamerRetryOptions {
     retryDelaysMs?: number[];
     unauthorizedStatus?: number;
     executeRequest: (header: Record<string, string>) => Promise<Response>;
+    requestUrl?: string;
+    requestMethod?: string;
 }
 
 interface HelixStreamerRetryResult {
@@ -212,7 +245,10 @@ export async function executeHelixStreamerRequestWith401Retry(options: HelixStre
                 refreshMessage: refreshedHeader.message,
                 ...options.context
             }, { destination: 'both' });
-        }
+        },
+        requestUrl: options.requestUrl,
+        requestMethod: options.requestMethod,
+        requestHeaders: headerResult.header as unknown as Record<string, string>
     });
 
     return { error: false, response };

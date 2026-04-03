@@ -238,6 +238,8 @@ async function fetchLiveStreamsByChannelIds(channelIDs: string[]): Promise<Twitc
             context: {
                 batchSize: batch.length
             },
+            requestUrl: getTwitchHelixUrl('streams', params.toString()),
+            requestMethod: 'GET',
             executeRequest: async (headers) => fetch(getTwitchHelixUrl('streams', params.toString()), {
                 headers
             })
@@ -290,6 +292,8 @@ async function fetchProfileImagesByIds(channelIDs: string[]): Promise<Map<string
             context: {
                 batchSize: batch.length
             },
+            requestUrl: getTwitchHelixUrl('users', params.toString()),
+            requestMethod: 'GET',
             executeRequest: async (headers) => fetch(getTwitchHelixUrl('users', params.toString()), {
                 headers
             })
