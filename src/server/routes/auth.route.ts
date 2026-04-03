@@ -788,10 +788,19 @@ router.post('/login', async (req: Request, res: Response) => {
             }
 
             if (!name || !email) {
+                const reason = !email ? 'email_denied' : 'missing_name';
+                console.warn('[AUTH/LOGIN] Email scope likely denied by user', {
+                    twitchUserId: id,
+                    hasEmail: Boolean(email),
+                    hasName: Boolean(name),
+                    timestamp: new Date().toISOString()
+                });
                 return res.status(400).json({
                     error: true,
                     message: 'Missing name or email',
-                    status: 400
+                    status: 400,
+                    code: 'AUTH_MISSING_EMAIL',
+                    type: reason
                 });
             }
 

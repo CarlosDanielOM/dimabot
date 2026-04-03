@@ -64,6 +64,7 @@ export interface IChannelAIPersonality {
     _id: Types.ObjectId;
     channelID: string;
     channel: string;
+    enabled: boolean;
     profiles: IProfile[];
     activeProfileId: string;
     personality: string;
@@ -221,6 +222,20 @@ function ensureProfiles(doc: IChannelAIPersonality): void {
 const channelAIPersonalitySchema = new Schema<IChannelAIPersonality>({
     channelID: { type: String, required: true },
     channel: { type: String, required: true },
+    /**
+     * Master kill switch for all AI features.
+     * When false, AI chat responses and the $(ai) command are disabled.
+     * The learning/memory pipeline is controlled separately by learningConfig.enabled.
+     *
+     * MIGRATION: After deploying this change, run once:
+     *   db.channelaiusers.updateMany(
+     *     { "learningConfig.enabled": false },
+     *     { $set: { "enabled": false } }
+     *   )
+     * This ensures existing users who had AI off via learningConfig.enabled
+     * are migrated to the new top-level enabled field.
+     */
+    enabled: { type: Boolean, default: true },
     profiles: {
         type: [profileSchema],
         default: []
