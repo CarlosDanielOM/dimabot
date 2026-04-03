@@ -9,6 +9,8 @@ import { registerFollowageFunctions } from './followage.functions.js';
 import { registerEventsubFunctions } from './eventsub.functions.js';
 import { registerTtsFunctions } from './tts.functions.js';
 import { registerTriggerFunctions } from './trigger.functions.js';
+import { registerDelayFunctions } from './delay.functions.js';
+import { registerChatFunctions } from './chat.functions.js';
 
 let registered = false;
 
@@ -27,6 +29,8 @@ export function registerAllFunctions(): void {
     registerEventsubFunctions();
     registerTtsFunctions();
     registerTriggerFunctions();
+    registerDelayFunctions();
+    registerChatFunctions();
 }
 
 export { registerFunction, getFunctionHandler, type FunctionHandler } from '../evaluator.js';

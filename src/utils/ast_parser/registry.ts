@@ -1,4 +1,4 @@
-import type { AstNode, ParseResult, ParserHandler, SyntaxDefinition, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, TemplateSegment, VariableStorage, ArrayAccessor, BinaryOperator, UnaryOperator, ArrayLiteralNode } from './types.js';
+import type { AstNode, ParseResult, ParserHandler, SyntaxDefinition, LiteralNode, GetVarNode, SetVarNode, ExistsNode, FunctionNode, ConditionalNode, BinaryExpressionNode, UnaryExpressionNode, TernaryExpressionNode, TemplateNode, TemplateSegment, VariableStorage, ArrayAccessor, BinaryOperator, UnaryOperator, ArrayLiteralNode, LoopAssignNode, LoopAssignOperator, LoopVarNode, ForLoopNode } from './types.js';
 import { tokenize } from './tokenizer.js';
 
 export type { SyntaxDefinition } from './types.js';
@@ -30,6 +30,149 @@ function parseLiteral(tokens: string[], currentIndex: number): ParseResult {
         value: token
     };
     return { node: literalNode, newIndex: currentIndex + 1 };
+}
+
+function isLoopVarToken(token: string | undefined): token is `#${string}` {
+    return typeof token === 'string' && /^#[a-zA-Z_][a-zA-Z0-9_]*$/.test(token);
+}
+
+function createLoopVarNode(rawName: string): LoopVarNode {
+    return {
+        type: 'loopVar',
+        name: rawName.slice(1)
+    };
+}
+
+function parseTokensToNodes(tokens: string[], registry: Map<string, SyntaxDefinition>): AstNode[] {
+    const nodes: AstNode[] = [];
+    let i = 0;
+
+    while (i < tokens.length) {
+        const token = tokens[i];
+
+        if (!token || token === ';' || token === '}' || token === ')') {
+            i++;
+            continue;
+        }
+
+        const result = parseExpression(tokens, i, registry);
+        if (result.node.type !== 'literal' || (result.node as LiteralNode).value !== '') {
+            nodes.push(result.node);
+        }
+
+        if (result.newIndex === i) {
+            i++;
+            continue;
+        }
+
+        i = result.newIndex;
+    }
+
+    return nodes;
+}
+
+function parseTokensToSingleNode(tokens: string[], registry: Map<string, SyntaxDefinition>): AstNode {
+    if (tokens.length === 0) {
+        return { type: 'literal', value: '' };
+    }
+
+    const result = parseStarExpression(tokens, 0, registry, 0);
+    const remaining = tokens.slice(result.newIndex).filter((token) => token !== ';' && token !== ')' && token !== '}');
+
+    if (remaining.length === 0) {
+        return result.node;
+    }
+
+    const nodes = [result.node, ...parseTokensToNodes(remaining, registry)];
+    return { type: 'root', children: nodes };
+}
+
+function findTopLevelToken(tokens: string[], target: string, startIndex: number, endIndex: number): number {
+    let parenDepth = 0;
+    let bracketDepth = 0;
+    let braceDepth = 0;
+
+    for (let i = startIndex; i < endIndex; i++) {
+        const token = tokens[i];
+
+        if (parenDepth === 0 && bracketDepth === 0 && braceDepth === 0 && token === target) {
+            return i;
+        }
+
+        if (token === '(' || token.endsWith('(')) {
+            parenDepth++;
+            continue;
+        }
+
+        if (token === ')') {
+            if (parenDepth > 0) {
+                parenDepth--;
+            }
+            continue;
+        }
+
+        if (token === '[') {
+            bracketDepth++;
+            continue;
+        }
+
+        if (token === ']') {
+            if (bracketDepth > 0) {
+                bracketDepth--;
+            }
+            continue;
+        }
+
+        if (token === '{') {
+            braceDepth++;
+            continue;
+        }
+
+        if (token === '}') {
+            if (braceDepth > 0) {
+                braceDepth--;
+            }
+            continue;
+        }
+    }
+
+    return -1;
+}
+
+function parseLoopVarOrAssignment(tokens: string[], currentIndex: number, registry: Map<string, SyntaxDefinition>): ParseResult {
+    const rawName = tokens[currentIndex];
+
+    if (!isLoopVarToken(rawName)) {
+        return parseLiteral(tokens, currentIndex);
+    }
+
+    const operatorToken = tokens[currentIndex + 1];
+    if (operatorToken && ['=', '+=', '-=', '*=', '/=', '%=', '++', '--'].includes(operatorToken)) {
+        const operator = operatorToken as LoopAssignOperator;
+
+        if (operator === '++' || operator === '--') {
+            const node: LoopAssignNode = {
+                type: 'loopAssign',
+                name: rawName.slice(1),
+                operator
+            };
+            return { node, newIndex: currentIndex + 2 };
+        }
+
+        const valueResult = parseStarExpression(tokens, currentIndex + 2, registry, 0);
+        const node: LoopAssignNode = {
+            type: 'loopAssign',
+            name: rawName.slice(1),
+            operator,
+            value: valueResult.node
+        };
+        return { node, newIndex: valueResult.newIndex };
+    }
+
+    return {
+        node: createLoopVarNode(rawName),
+        newIndex: currentIndex + 1
+    };
 }
 
 function parseTemplateString(content: string, registry: Map<string, SyntaxDefinition>): TemplateNode {
@@ -224,14 +367,18 @@ export const parseExpression = (
     if (token === undefined) {
         return parseLiteral(tokens, currentIndex);
     }
+
+    if (token === ';' || token === '}' || token === ')') {
+        return { node: { type: 'literal', value: '' }, newIndex: currentIndex + (token === ')' ? 0 : 1) };
+    }
+
+    if (isLoopVarToken(token)) {
+        return parseLoopVarOrAssignment(tokens, currentIndex, registry);
+    }
     
     const definition = registry.get(token);
     if (definition) {
         return definition.handler(tokens, currentIndex, registry);
-    }
-    
-    if (token === ')') {
-        return { node: { type: 'literal', value: '' }, newIndex: currentIndex };
     }
     
     if (token.startsWith('__TEMPLATE__:')) {
@@ -276,7 +423,7 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
         
         if (tokens[i] === ']') {
             i++;
-            accessor = { type: 'append' };
+            accessor = { type: 'array' };
         } else if (tokens[i] === 'random') {
             i++;
             if (tokens[i] === ']') i++;
@@ -287,7 +434,9 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
             if (tokens[i] === ']') i++;
             accessor = { type: 'index', index: indexResult.node };
         }
-    } else if (tokens[i] === '.') {
+    }
+
+    if (tokens[i] === '.') {
         i++;
         if (tokens[i] === 'length') {
             i++;
@@ -297,7 +446,7 @@ const parseVariable: ParserHandler = (tokens, currentIndex, registry) => {
     
     const nextToken = tokens[i];
     
-    if (accessor?.type === 'append' && nextToken && nextToken !== ')') {
+    if (accessor?.type === 'array' && nextToken && nextToken !== ')' && nextToken !== '.') {
         const valueResult = parseExpression(tokens, i, registry);
         i = valueResult.newIndex;
         if (tokens[i] === ')') i++;
@@ -376,7 +525,10 @@ const parseExists: ParserHandler = (tokens, currentIndex, registry) => {
     if (tokens[i] === '[') {
         i++;
         
-        if (tokens[i] === 'random') {
+        if (tokens[i] === ']') {
+            i++;
+            accessor = { type: 'array' };
+        } else if (tokens[i] === 'random') {
             i++;
             if (tokens[i] === ']') i++;
             accessor = { type: 'random' };
@@ -386,7 +538,9 @@ const parseExists: ParserHandler = (tokens, currentIndex, registry) => {
             if (tokens[i] === ']') i++;
             accessor = { type: 'index', index: indexResult.node };
         }
-    } else if (tokens[i] === '.') {
+    }
+
+    if (tokens[i] === '.') {
         i++;
         if (tokens[i] === 'length') {
             i++;
@@ -515,8 +669,12 @@ function parseAtom(
 ): ParseResult {
     const token = tokens[i];
     
-    if (token === undefined || token === ')') {
+    if (token === undefined || token === ')' || token === ';' || token === '}') {
         return { node: { type: 'literal', value: '' }, newIndex: i };
+    }
+
+    if (isLoopVarToken(token)) {
+        return parseLoopVarOrAssignment(tokens, i, registry);
     }
     
     if (token === '(') {
@@ -577,7 +735,7 @@ function parseStarExpression(
     while (true) {
         const token = tokens[currentIndex];
         
-        if (!token || token === ')' || token === ':') {
+        if (!token || token === ')' || token === ':' || token === ';' || token === '}') {
             break;
         }
         
@@ -641,7 +799,92 @@ function parseStarExpression(
     return { node: left, newIndex: currentIndex };
 }
 
+function parseForLoop(tokens: string[], currentIndex: number, registry: Map<string, SyntaxDefinition>): ParseResult {
+    let i = currentIndex + 1;
+
+    if (String(tokens[i] || '').toLowerCase() !== 'for') {
+        return { node: { type: 'literal', value: '[Loop error: invalid loop syntax]' }, newIndex: currentIndex + 1 };
+    }
+
+    i++;
+    const loopVarToken = tokens[i];
+    if (!isLoopVarToken(loopVarToken)) {
+        return { node: { type: 'literal', value: '[Loop error: invalid loop variable]' }, newIndex: currentIndex + 1 };
+    }
+
+    const loopVar = loopVarToken.slice(1);
+    i++;
+
+    const bodyStart = findTopLevelToken(tokens, '{', i, tokens.length);
+    if (bodyStart === -1) {
+        return { node: { type: 'literal', value: '[Loop error: missing loop body]' }, newIndex: currentIndex + 1 };
+    }
+
+    let braceDepth = 1;
+    let bodyEnd = bodyStart + 1;
+    while (bodyEnd < tokens.length && braceDepth > 0) {
+        if (tokens[bodyEnd] === '{') {
+            braceDepth++;
+        } else if (tokens[bodyEnd] === '}') {
+            braceDepth--;
+        }
+        bodyEnd++;
+    }
+
+    if (braceDepth !== 0) {
+        return { node: { type: 'literal', value: '[Loop error: unclosed loop body]' }, newIndex: currentIndex + 1 };
+    }
+
+    const bodyTokens = tokens.slice(bodyStart + 1, bodyEnd - 1);
+    const body = parseTokensToNodes(bodyTokens, registry);
+    const modeToken = String(tokens[i] || '').toLowerCase();
+
+    let loopNode: ForLoopNode;
+    if (modeToken === 'in') {
+        const iterable = parseTokensToSingleNode(tokens.slice(i + 1, bodyStart), registry);
+        loopNode = {
+            type: 'forLoop',
+            loopVar,
+            mode: 'foreach',
+            iterable,
+            body
+        };
+    } else {
+        const firstSemi = findTopLevelToken(tokens, ';', i, bodyStart);
+        const secondSemi = firstSemi === -1 ? -1 : findTopLevelToken(tokens, ';', firstSemi + 1, bodyStart);
+
+        if (firstSemi === -1 || secondSemi === -1) {
+            return { node: { type: 'literal', value: '[Loop error: invalid range loop syntax]' }, newIndex: currentIndex + 1 };
+        }
+
+        const init = parseTokensToSingleNode(tokens.slice(i - 1, firstSemi), registry);
+        const condition = parseTokensToSingleNode(tokens.slice(firstSemi + 1, secondSemi), registry);
+        const update = parseTokensToSingleNode(tokens.slice(secondSemi + 1, bodyStart), registry);
+
+        loopNode = {
+            type: 'forLoop',
+            loopVar,
+            mode: 'range',
+            init,
+            condition,
+            update,
+            body
+        };
+    }
+
+    let newIndex = bodyEnd;
+    if (tokens[newIndex] === ')') {
+        newIndex++;
+    }
+
+    return { node: loopNode, newIndex };
+}
+
 const parseCompute: ParserHandler = (tokens, currentIndex, registry) => {
+    if (String(tokens[currentIndex + 1] || '').toLowerCase() === 'for') {
+        return parseForLoop(tokens, currentIndex, registry);
+    }
+
     const result = parseStarExpression(tokens, currentIndex + 1, registry, 0);
     let i = result.newIndex;
     

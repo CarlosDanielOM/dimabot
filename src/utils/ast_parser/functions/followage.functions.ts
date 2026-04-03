@@ -35,6 +35,8 @@ const followageHandler: FunctionHandler = async (args, ctx) => {
             operation: 'followage_function',
             channelID: ctx.broadcasterId,
             context: { userId: userResult.data.id },
+            requestUrl: getTwitchHelixUrl('channels/followers', params.toString()),
+            requestMethod: 'GET',
             executeRequest: async (headers) => fetch(getTwitchHelixUrl('channels/followers', params.toString()), {
                 headers
             })

@@ -22,13 +22,17 @@ export function parse(input: string, registry: Map<string, SyntaxDefinition> = S
         const definition = registry.get(token);
         if (definition) {
             const result = definition.handler(tokens, i, registry);
-            children.push(result.node);
+            if (result.node.type !== 'literal' || result.node.value !== '') {
+                children.push(result.node);
+            }
             i = result.newIndex;
-        } else if (token === ')') {
+        } else if (token === ')' || token === ';' || token === '}') {
             i++;
         } else {
             const result = parseExpression(tokens, i, registry);
-            children.push(result.node);
+            if (result.node.type !== 'literal' || result.node.value !== '') {
+                children.push(result.node);
+            }
             i = result.newIndex;
         }
     }
@@ -157,6 +161,42 @@ export function printAst(node: AstNode, indent: number = 0): string {
             output += `${prefix}ArrayLiteral\n`;
             for (const item of node.items) {
                 output += printAst(item, indent + 1);
+            }
+            break;
+
+        case 'loopVar':
+            output += `${prefix}LoopVar("#${node.name}")\n`;
+            break;
+
+        case 'loopAssign':
+            output += `${prefix}LoopAssign("#${node.name}", "${node.operator}")\n`;
+            if (node.value) {
+                output += `${prefix}  value:\n`;
+                output += printAst(node.value, indent + 2);
+            }
+            break;
+
+        case 'forLoop':
+            output += `${prefix}ForLoop("#${node.loopVar}", ${node.mode})\n`;
+            if (node.init) {
+                output += `${prefix}  init:\n`;
+                output += printAst(node.init, indent + 2);
+            }
+            if (node.condition) {
+                output += `${prefix}  condition:\n`;
+                output += printAst(node.condition, indent + 2);
+            }
+            if (node.update) {
+                output += `${prefix}  update:\n`;
+                output += printAst(node.update, indent + 2);
+            }
+            if (node.iterable) {
+                output += `${prefix}  iterable:\n`;
+                output += printAst(node.iterable, indent + 2);
+            }
+            output += `${prefix}  body:\n`;
+            for (const bodyNode of node.body) {
+                output += printAst(bodyNode, indent + 2);
             }
             break;
             

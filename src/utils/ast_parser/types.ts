@@ -1,4 +1,4 @@
-export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template' | 'arrayLiteral' | 'commandRef';
+export type NodeType = 'root' | 'setVar' | 'getVar' | 'function' | 'conditional' | 'literal' | 'custom' | 'exists' | 'binary' | 'unary' | 'ternary' | 'template' | 'arrayLiteral' | 'commandRef' | 'loopVar' | 'loopAssign' | 'forLoop';
 
 export type TemplateSegment = { type: 'text'; value: string } | { type: 'expr'; node: AstNode };
 
@@ -15,11 +15,14 @@ export interface ParsedVarName {
 }
 
 export type ArrayAccessor = 
+    | { type: 'array' }
     | { type: 'index'; index: AstNode }
     | { type: 'random' }
     | { type: 'length' }
     | { type: 'append' }
     | { type: 'setIndex'; index: AstNode };
+
+export type LoopAssignOperator = '=' | '+=' | '-=' | '*=' | '/=' | '%=' | '++' | '--';
 
 export interface BaseNode {
     type: NodeType;
@@ -59,6 +62,18 @@ export interface CommandRefNode extends BaseNode {
     type: 'commandRef';
     commandName: string;
     args: AstNode[];
+}
+
+export interface LoopVarNode extends BaseNode {
+    type: 'loopVar';
+    name: string;
+}
+
+export interface LoopAssignNode extends BaseNode {
+    type: 'loopAssign';
+    name: string;
+    operator: LoopAssignOperator;
+    value?: AstNode;
 }
 
 export interface FunctionNode extends BaseNode {
@@ -112,13 +127,26 @@ export interface ArrayLiteralNode extends BaseNode {
     items: AstNode[];
 }
 
+export interface ForLoopNode extends BaseNode {
+    type: 'forLoop';
+    loopVar: string;
+    mode: 'range' | 'foreach';
+    init?: AstNode;
+    condition?: AstNode;
+    update?: AstNode;
+    iterable?: AstNode;
+    body: AstNode[];
+}
+
 export interface CustomNode<T = unknown> extends BaseNode {
     type: 'custom';
     customType: string;
     data: T;
 }
 
-export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | ArrayLiteralNode | CustomNode | CommandRefNode;
+export type AstNode = RootNode | SetVarNode | GetVarNode | ExistsNode | FunctionNode | ConditionalNode | BinaryExpressionNode | UnaryExpressionNode | TernaryExpressionNode | TemplateNode | LiteralNode | ArrayLiteralNode | CustomNode | CommandRefNode | LoopVarNode | LoopAssignNode | ForLoopNode;
+
+export type LoopExitType = 'break' | 'continue';
 
 export interface IStreamerData {
     id?: string;
@@ -149,6 +177,9 @@ export interface ExecutionContext {
     commandId: string;
     visitedCommands?: Set<string>;
     commandRefDepth?: number;
+    loopExit?: LoopExitType;
+    loopVars?: Map<string, string>;
+    loopDepth?: number;
     commandResponses: string[];
     commandVariables: Map<string, string>;
     userCommandVariables: Map<string, string>;

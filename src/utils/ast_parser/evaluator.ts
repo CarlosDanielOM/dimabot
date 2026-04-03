@@ -1,4 +1,3 @@
-import { commandHandler } from '../../handlers/commands.handler.js';
 import { getDragonflyClient } from '../../utils/databases/dragonfly.database.js';
 import { parse } from './parser.js';
 import type {
@@ -11,9 +10,12 @@ import type {
     EvaluateResult,
     ExecutionContext,
     ExistsNode,
+    ForLoopNode,
     FunctionNode,
     GetVarNode,
     LiteralNode,
+    LoopAssignNode,
+    LoopVarNode,
     RootNode,
     SetVarNode,
     TemplateNode,
@@ -143,6 +145,101 @@ function getScopeCandidates(context: ExecutionContext): string[] {
 
 function canWriteDbVariables(plan: 'free' | 'premium' | 'pro'): boolean {
     return plan === 'premium' || plan === 'pro';
+}
+
+function getMaxLoopDepth(plan: 'free' | 'premium' | 'pro'): number {
+    switch (plan) {
+        case 'free':
+            return 2;
+        case 'premium':
+            return 3;
+        case 'pro':
+            return 4;
+        default:
+            return 2;
+    }
+}
+
+function getMaxLoopIterations(plan: 'free' | 'premium' | 'pro'): number {
+    switch (plan) {
+        case 'free':
+            return 25;
+        case 'premium':
+            return 50;
+        case 'pro':
+            return 100;
+        default:
+            return 25;
+    }
+}
+
+function parseIterableValue(value: unknown): string[] {
+    if (Array.isArray(value)) {
+        return value.map((item) => String(item ?? ''));
+    }
+
+    if (typeof value === 'string') {
+        try {
+            const parsed = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                return parsed.map((item) => String(item ?? ''));
+            }
+        } catch {
+            return value === '' ? [] : [value];
+        }
+    }
+
+    return value === undefined || value === null ? [] : [String(value)];
+}
+
+function getLoopVarValue(context: ExecutionContext, name: string): string | undefined {
+    return context.loopVars?.get(name);
+}
+
+function setLoopVarValue(context: ExecutionContext, name: string, value: string): void {
+    if (!context.loopVars) {
+        context.loopVars = new Map<string, string>();
+    }
+
+    context.loopVars.set(name, value);
+}
+
+function applyLoopAssignment(currentValue: string | undefined, operator: LoopAssignNode['operator'], value?: unknown): string {
+    if (operator === '++') {
+        return String(toNumberSafe(currentValue) + 1);
+    }
+
+    if (operator === '--') {
+        return String(toNumberSafe(currentValue) - 1);
+    }
+
+    const nextValue = String(value ?? '');
+    if (operator === '=') {
+        return nextValue;
+    }
+
+    if (operator === '+=') {
+        const leftNum = Number(String(currentValue ?? '').trim());
+        const rightNum = Number(String(nextValue).trim());
+        const bothNumeric = Number.isFinite(leftNum) && Number.isFinite(rightNum);
+        return bothNumeric ? String(leftNum + rightNum) : `${currentValue ?? ''}${nextValue}`;
+    }
+
+    const leftNum = toNumberSafe(currentValue);
+    const rightNum = toNumberSafe(nextValue);
+
+    switch (operator) {
+        case '-=':
+            return String(leftNum - rightNum);
+        case '*=':
+            return String(leftNum * rightNum);
+        case '/=':
+            return String(rightNum === 0 ? 0 : leftNum / rightNum);
+        case '%=':
+            return String(rightNum === 0 ? 0 : leftNum % rightNum);
+        default:
+            return nextValue;
+    }
 }
 
 async function getValueFromStorage(
@@ -403,6 +500,29 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             return { value: literalNode.value, context };
         }
 
+        case 'loopVar': {
+            const loopVarNode = node as LoopVarNode;
+            const loopValue = getLoopVarValue(context, loopVarNode.name);
+            return { value: loopValue ?? `#${loopVarNode.name}`, context };
+        }
+
+        case 'loopAssign': {
+            const loopAssignNode = node as LoopAssignNode;
+            let nextValue: unknown;
+            let currentContext = context;
+
+            if (loopAssignNode.value) {
+                const valueResult = await evaluate(loopAssignNode.value, context);
+                nextValue = valueResult.value;
+                currentContext = valueResult.context;
+            }
+
+            const currentValue = getLoopVarValue(currentContext, loopAssignNode.name);
+            const resolvedValue = applyLoopAssignment(currentValue, loopAssignNode.operator, nextValue);
+            setLoopVarValue(currentContext, loopAssignNode.name, resolvedValue);
+            return { value: resolvedValue, context: currentContext };
+        }
+
         case 'getVar': {
             const getNode = node as GetVarNode;
             const { name, storage, accessor, userSelector } = getNode;
@@ -421,6 +541,10 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
                 }
 
                 switch (accessor.type) {
+                    case 'array': {
+                        return { value: JSON.stringify(context.commandResponses), context };
+                    }
+
                     case 'index': {
                         const indexResult = await evaluate(accessor.index, context);
                         const index = parseInt(String(indexResult.value), 10);
@@ -451,6 +575,10 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             const arrayData = await getArrayFromStorage(name, storage, workingContext, targetUserLogin);
 
             switch (accessor.type) {
+                case 'array': {
+                    return { value: JSON.stringify(arrayData), context: workingContext };
+                }
+
                 case 'index': {
                     const indexResult = await evaluate(accessor.index, workingContext);
                     const index = parseInt(String(indexResult.value), 10);
@@ -599,6 +727,10 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
                 }
 
                 switch (accessor.type) {
+                    case 'array': {
+                        return { value: context.commandResponses.length > 0 ? 'true' : 'false', context };
+                    }
+
                     case 'index': {
                         const indexResult = await evaluate(accessor.index, context);
                         const index = parseInt(String(indexResult.value), 10);
@@ -625,6 +757,10 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             const arrayExists = await checkArrayKeyExists(name, storage, workingContext, targetUserLogin);
 
             switch (accessor.type) {
+                case 'array': {
+                    return { value: arrayExists ? 'true' : 'false', context: workingContext };
+                }
+
                 case 'index': {
                     if (!arrayExists) {
                         return { value: 'false', context: workingContext };
@@ -760,6 +896,111 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             return { value: values, context: currentContext };
         }
 
+        case 'forLoop': {
+            const forLoopNode = node as ForLoopNode;
+            const currentDepth = context.loopDepth ?? 0;
+            if (currentDepth >= getMaxLoopDepth(context.userPlan)) {
+                return { value: '', context };
+            }
+
+            const maxIterations = getMaxLoopIterations(context.userPlan);
+            const baseLoopVars = new Map(context.loopVars ?? []);
+            const loopContext: ExecutionContext = {
+                ...context,
+                loopDepth: currentDepth + 1,
+                loopVars: baseLoopVars,
+                loopExit: undefined
+            };
+
+            let activeContext = loopContext;
+            let iterations = 0;
+
+            const runBody = async (): Promise<'break' | 'continue' | 'normal'> => {
+                const iterationLoopVars = new Map(activeContext.loopVars ?? []);
+                const bodyContext: ExecutionContext = {
+                    ...activeContext,
+                    loopVars: iterationLoopVars,
+                    loopExit: undefined
+                };
+
+                for (const bodyNode of forLoopNode.body) {
+                    const bodyResult = await evaluate(bodyNode, bodyContext);
+                    bodyContext.loopVars = new Map(bodyResult.context.loopVars ?? bodyContext.loopVars ?? []);
+                    bodyContext.loopExit = bodyResult.context.loopExit;
+                    activeContext = {
+                        ...bodyResult.context,
+                        loopDepth: loopContext.loopDepth,
+                        loopVars: new Map(bodyContext.loopVars ?? []),
+                        loopExit: bodyContext.loopExit
+                    };
+
+                    if (bodyContext.loopExit === 'break') {
+                        activeContext.loopExit = undefined;
+                        return 'break';
+                    }
+
+                    if (bodyContext.loopExit === 'continue') {
+                        activeContext.loopExit = undefined;
+                        return 'continue';
+                    }
+                }
+
+                activeContext.loopExit = undefined;
+                return 'normal';
+            };
+
+            if (forLoopNode.mode === 'foreach') {
+                const iterableResult = await evaluate(forLoopNode.iterable ?? { type: 'literal', value: '' }, loopContext);
+                activeContext = { ...iterableResult.context, loopDepth: loopContext.loopDepth, loopVars: new Map(iterableResult.context.loopVars ?? baseLoopVars), loopExit: undefined };
+                const iterableValues = parseIterableValue(iterableResult.value);
+
+                for (const item of iterableValues) {
+                    if (iterations >= maxIterations) {
+                        break;
+                    }
+
+                    setLoopVarValue(activeContext, forLoopNode.loopVar, item);
+                    const loopResult = await runBody();
+                    iterations++;
+
+                    if (loopResult === 'break') {
+                        break;
+                    }
+                }
+
+                return { value: '', context: { ...activeContext, loopDepth: context.loopDepth, loopExit: undefined, loopVars: context.loopVars } };
+            }
+
+            if (forLoopNode.init) {
+                const initResult = await evaluate(forLoopNode.init, loopContext);
+                activeContext = { ...initResult.context, loopDepth: loopContext.loopDepth, loopVars: new Map(initResult.context.loopVars ?? baseLoopVars), loopExit: undefined };
+            }
+
+            while (iterations < maxIterations) {
+                if (forLoopNode.condition) {
+                    const conditionResult = await evaluate(forLoopNode.condition, activeContext);
+                    activeContext = { ...conditionResult.context, loopDepth: loopContext.loopDepth, loopVars: new Map(conditionResult.context.loopVars ?? activeContext.loopVars ?? []), loopExit: undefined };
+                    if (!isTruthy(conditionResult.value)) {
+                        break;
+                    }
+                }
+
+                const bodyResult = await runBody();
+                iterations++;
+
+                if (bodyResult === 'break') {
+                    break;
+                }
+
+                if (forLoopNode.update) {
+                    const updateResult = await evaluate(forLoopNode.update, activeContext);
+                    activeContext = { ...updateResult.context, loopDepth: loopContext.loopDepth, loopVars: new Map(updateResult.context.loopVars ?? activeContext.loopVars ?? []), loopExit: undefined };
+                }
+            }
+
+            return { value: '', context: { ...activeContext, loopDepth: context.loopDepth, loopExit: undefined, loopVars: context.loopVars } };
+        }
+
         case 'custom': {
             const customNode = node as CustomNode;
             return { value: `[Custom node not implemented: ${customNode.customType}]`, context };
@@ -797,6 +1038,7 @@ export async function evaluate(node: AstNode, context: ExecutionContext): Promis
             }
 
             try {
+                const { commandHandler } = await import('../../handlers/commands.handler.js');
                 const fakeEventData = {
                     chatter_user_id: context.broadcasterId,
                     chatter_user_login: context.userLogin || context.broadcasterId,
@@ -880,6 +1122,9 @@ export function createExecutionContext(overrides: Partial<ExecutionContext> = {}
         scopeAliases: [],
         commandName: '',
         commandId: '',
+        loopExit: undefined,
+        loopVars: new Map<string, string>(),
+        loopDepth: 0,
         commandResponses: [],
         commandVariables: new Map<string, string>(),
         userCommandVariables: new Map<string, string>(),

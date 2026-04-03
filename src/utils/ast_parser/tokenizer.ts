@@ -127,6 +127,24 @@ export function tokenize(input: string, registry: Map<string, SyntaxDefinition> 
             i += 1;
             continue;
         }
+
+        if (remaining[0] === '{') {
+            tokens.push('{');
+            i += 1;
+            continue;
+        }
+
+        if (remaining[0] === '}') {
+            tokens.push('}');
+            i += 1;
+            continue;
+        }
+
+        if (remaining[0] === ';') {
+            tokens.push(';');
+            i += 1;
+            continue;
+        }
         
         if (remaining[0] === '.') {
             tokens.push('.');
@@ -193,6 +211,13 @@ export function tokenize(input: string, registry: Map<string, SyntaxDefinition> 
             continue;
         }
         
+        const compoundOpMatch = remaining.match(/^(\+\+|--|\+=|-=|\*=|\/=|%=)/);
+        if (compoundOpMatch) {
+            tokens.push(compoundOpMatch[1]);
+            i += compoundOpMatch[1].length;
+            continue;
+        }
+
         if (remaining[0] === '+') {
             const next = remaining[1];
             if (next && /[a-zA-Z_]/.test(next)) {
@@ -275,6 +300,8 @@ export function tokenize(input: string, registry: Map<string, SyntaxDefinition> 
             
             if (/\s/.test(char)) break;
             if (char === ')') break;
+            if (char === '{' || char === '}') break;
+            if (char === ';') break;
             if (char === '?' || char === ':') break;
             if (char === '[' || char === ']' || char === '.') break;
             if (char === '(') break;
@@ -325,5 +352,5 @@ export function buildTokenizerRegex(registry: Map<string, SyntaxDefinition>): Re
     const startTokens = Array.from(registry.keys());
     const escaped = startTokens.map(t => escapeRegExp(t));
     
-    return new RegExp(`(${escaped.join('|')}|\\s+|"|\\?|:|\\)|==|!=|>=|<=|~=|<>|[=<>])`);
+    return new RegExp(`(${escaped.join('|')}|\\s+|"|\\?|:|;|\\{|\\}|\\)|\\+\\+|--|\\+=|-=|\\*=|\\/=|%=|==|!=|>=|<=|~=|<>|[=<>])`);
 }
