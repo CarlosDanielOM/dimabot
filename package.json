@@ -31,6 +31,7 @@
   "author": "CDOM201",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@aws-sdk/client-s3": "^3.797.0",
     "@google/genai": "^0.6.1",
     "@polar-sh/sdk": "^0.42.1",
