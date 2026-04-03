@@ -167,7 +167,10 @@ class TwitchStreamers {
             
             if (account_type === 'twitch') {
                 const { refreshTwitchToken } = await import('../utils/tokens.js');
-                const refreshResult = await refreshTwitchToken(refreshToken, id);
+                const refreshResult = await refreshTwitchToken(refreshToken, id, {
+                    endpoint: 'token_refresh',
+                    url: 'https://id.twitch.tv/oauth2/token'
+                });
 
                 if (!refreshResult.token) {
                     await error({ function: 'TwitchStreamers.getAccountTokenById', error: `Failed to refresh Twitch token for ${id}` }, { channelId: id, destination: 'cache' });

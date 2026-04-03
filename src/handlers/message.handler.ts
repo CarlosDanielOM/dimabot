@@ -202,7 +202,7 @@ export const messageHandler = async (channelID: string, messageEventData: IChatM
         if(!command) {
             if(messageEventData.message.text.startsWith('@domdimabot') || messageEventData.message.text.startsWith('@DomDimaBot') || messageEventData.message.text.includes('@domdimabot') || messageEventData.message.text.includes('@DomDimaBot')) {
                 const aiPersonality = await ChannelAIPersonalitySchema.findOne({ channelID }).lean() as IChannelAIPersonality | null;
-                if (!aiPersonality || !aiPersonality.learningConfig?.enabled) return;
+                if (!aiPersonality || aiPersonality.enabled === false) return;
 
                 if (STREAMER.name == 'ozbellvt' || STREAMER.name == 'littlehuntervt') return;
 
