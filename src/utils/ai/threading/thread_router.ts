@@ -14,7 +14,7 @@ import {
 } from './thread_store.js';
 import { recordThreadRoutingMetric } from '../../observability/bot_runtime_metrics.js';
 
-const THREAD_MATCH_THRESHOLD = 0.55;
+const THREAD_MATCH_THRESHOLD = 0.35;
 
 export interface ResolveThreadParams {
     channelID: string;

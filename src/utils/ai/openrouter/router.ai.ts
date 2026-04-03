@@ -10,12 +10,17 @@ import { getDragonflyClient } from '../../databases/dragonfly.database.js';
 import { ingestPolarSHEvent } from '../../polarsh.js';
 import { sendTwitchChatMessage as sendTwitchChatMessageImport } from '../../../functions/chats/send_message.chat.js';
 import { executeAiCode } from '../sandbox/execute_sandbox.ai.js';
-import { CODING_MODELS } from '../constants.js';
+import { CODING_MODELS, MINIMAX_MODEL } from '../constants.js';
+import { minimaxChat, calculateMiniMaxCost } from '../minimax/minimax_client.js';
+import { createFetchWithRetry } from '../fetch.utils.js';
 import { error, debug, info } from '../../logger.js';
 
 const sendTwitchChatMessage = sendTwitchChatMessageImport;
 import path from 'path';
 import fs from 'fs';
+
+const OPENROUTER_TIMEOUT = 30000;
+const fetchWithRetry = createFetchWithRetry({ timeout: OPENROUTER_TIMEOUT, retries: 3 });
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -96,7 +101,7 @@ export interface IChatMessageTags {
 
 function selectChatModel(streamer: IStreamerData | null | undefined, isExhausted: boolean = false): string {
     if (isExhausted) {
-        return MODELS.free;
+        return MODELS.exhausted;
     }
     if (streamer?.plan_tier === 'pro') {
         return MODELS.pro;
@@ -199,12 +204,7 @@ async function generateCodePlan(
 ): Promise<ICodePlanResult> {
     const apiDocs = loadApiDocumentation();
     
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://domdimabot.com',
-        'X-Title': 'DomDimaBot'
-    };
+    const isPro = isProTier(streamer);
 
     const systemPrompt = `You are a code planning assistant for DomDimaBot, a Twitch chat bot.
 Your task is to create a structured plan for code that will be executed in a secure sandbox environment.
@@ -240,47 +240,88 @@ Keep the plan concise but complete. Focus on practical implementation steps.`;
 Provide a structured plan with clear steps.`;
 
     try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: headers as Record<string, string>,
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                user: `${channelID}`,
-                usage: {
-                    'include': true
-                }
-            })
-        });
+        let plan: string = '';
 
-        const data: any = await response.json();
-        
-        if (data.error) {
-            return { plan: null, error: data.error.message || 'Planning failed' };
-        }
-
-        if (streamer?.polar_sh_customer_id && data.usage) {
-            const aiUsage = data.usage;
-            const actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + 
-                              (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
-
-            await ingestPolarSHEvent({
-                customerId: streamer.polar_sh_customer_id,
-                channelID: channelID,
-                cost: actualCost,
-                reason: 'planner',
-                llm: {
-                    model: model,
-                    usage: aiUsage
-                },
-                mode: 'cache'
+        if (isPro) {
+            debug({ function: 'generateCodePlan', message: '[Router] Pro tier - using MiniMax for code planning', channelID, model: MINIMAX_MODEL }, { channelId: channelID, destination: 'console' });
+            const result = await minimaxChat({
+                model: MINIMAX_MODEL,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+                maxTokens: 10000,
+                channelID
             });
-        }
+            plan = result.content;
 
-        const plan = data.choices?.[0]?.message?.content || '';
+            if (streamer?.polar_sh_customer_id) {
+                const cost = calculateMiniMaxCost(result.inputTokens, result.outputTokens);
+                debug({ function: 'generateCodePlan', message: '[Router] MiniMax cost tracked', channelID, cost, inputTokens: result.inputTokens, outputTokens: result.outputTokens }, { channelId: channelID, destination: 'console' });
+                await ingestPolarSHEvent({
+                    customerId: streamer.polar_sh_customer_id,
+                    channelID: channelID,
+                    cost,
+                    reason: 'planner',
+                    llm: {
+                        model: MINIMAX_MODEL,
+                        usage: {
+                            prompt_tokens: result.inputTokens,
+                            completion_tokens: result.outputTokens,
+                            total_tokens: result.inputTokens + result.outputTokens
+                        }
+                    },
+                    mode: 'cache'
+                });
+            }
+        } else {
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'https://domdimabot.com',
+                'X-Title': 'DomDimaBot'
+            };
+
+            const response = await fetchWithRetry('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: headers as Record<string, string>,
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    user: `${channelID}`,
+                    usage: {
+                        'include': true
+                    }
+                })
+            });
+
+            const data: any = await response.json();
+            
+            if (data.error) {
+                return { plan: null, error: data.error.message || 'Planning failed' };
+            }
+
+            if (streamer?.polar_sh_customer_id && data.usage) {
+                const aiUsage = data.usage;
+                const actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + 
+                                  (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
+
+                await ingestPolarSHEvent({
+                    customerId: streamer.polar_sh_customer_id,
+                    channelID: channelID,
+                    cost: actualCost,
+                    reason: 'planner',
+                    llm: {
+                        model: model,
+                        usage: aiUsage
+                    },
+                    mode: 'cache'
+                });
+            }
+
+            plan = data.choices?.[0]?.message?.content || '';
+        }
         
         return { plan, error: null };
     } catch (err) {
@@ -301,13 +342,7 @@ async function generateCode(
     streamer: IStreamerData | null = null
 ): Promise<ICodeGenerationResult> {
     const apiDocs = loadApiDocumentation();
-    
-    const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        'HTTP-Referer': 'https://domdimabot.com',
-        'X-Title': 'DomDimaBot'
-    };
+    const isPro = streamer ? isProTier(streamer) : false;
 
     const systemPrompt = `You are a code generation assistant for DomDimaBot, a Twitch chat bot.
 Generate JavaScript code that will run in a secure sandbox environment.
@@ -375,48 +410,89 @@ ${plan}`;
     }
 
     try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-            method: 'POST',
-            headers: headers as Record<string, string>,
-            body: JSON.stringify({
-                model: model,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userPrompt }
-                ],
-                max_tokens: 10000,
-                user: `${channelID}`,
-                usage: {
-                    'include': true
-                }
-            })
-        });
+        let code = '';
 
-        const data: any = await response.json();
-        
-        if (data.error) {
-            return { code: null, error: data.error.message || 'Code generation failed' };
-        }
-
-        if (streamer?.polar_sh_customer_id && data.usage) {
-            const aiUsage = data.usage;
-            const actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + 
-                              (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
-
-            await ingestPolarSHEvent({
-                customerId: streamer.polar_sh_customer_id,
-                channelID: channelID,
-                cost: actualCost,
-                reason: 'coding_agent',
-                llm: {
-                    model: model,
-                    usage: aiUsage
-                },
-                mode: 'cache'
+        if (isPro) {
+            debug({ function: 'generateCode', message: '[Router] Pro tier - using MiniMax for code generation', channelID, model: MINIMAX_MODEL }, { channelId: channelID, destination: 'console' });
+            const result = await minimaxChat({
+                model: MINIMAX_MODEL,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+                maxTokens: 10000,
+                channelID
             });
-        }
+            code = result.content;
 
-        let code = data.choices?.[0]?.message?.content || '';
+            if (streamer?.polar_sh_customer_id) {
+                const cost = calculateMiniMaxCost(result.inputTokens, result.outputTokens);
+                debug({ function: 'generateCode', message: '[Router] MiniMax cost tracked', channelID, cost, inputTokens: result.inputTokens, outputTokens: result.outputTokens }, { channelId: channelID, destination: 'console' });
+                await ingestPolarSHEvent({
+                    customerId: streamer.polar_sh_customer_id,
+                    channelID: channelID,
+                    cost,
+                    reason: 'coding_agent',
+                    llm: {
+                        model: MINIMAX_MODEL,
+                        usage: {
+                            prompt_tokens: result.inputTokens,
+                            completion_tokens: result.outputTokens,
+                            total_tokens: result.inputTokens + result.outputTokens
+                        }
+                    },
+                    mode: 'cache'
+                });
+            }
+        } else {
+            const headers = {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+                'HTTP-Referer': 'https://domdimabot.com',
+                'X-Title': 'DomDimaBot'
+            };
+
+            const response = await fetchWithRetry('https://openrouter.ai/api/v1/chat/completions', {
+                method: 'POST',
+                headers: headers as Record<string, string>,
+                body: JSON.stringify({
+                    model: model,
+                    messages: [
+                        { role: 'system', content: systemPrompt },
+                        { role: 'user', content: userPrompt }
+                    ],
+                    max_tokens: 10000,
+                    user: `${channelID}`,
+                    usage: {
+                        'include': true
+                    }
+                })
+            });
+
+            const data: any = await response.json();
+            
+            if (data.error) {
+                return { code: null, error: data.error.message || 'Code generation failed' };
+            }
+
+            if (streamer?.polar_sh_customer_id && data.usage) {
+                const aiUsage = data.usage;
+                const actualCost = (aiUsage?.cost_details?.upstream_inference_prompt_cost || 0) + 
+                                  (aiUsage?.cost_details?.upstream_inference_completions_cost || 0);
+
+                await ingestPolarSHEvent({
+                    customerId: streamer.polar_sh_customer_id,
+                    channelID: channelID,
+                    cost: actualCost,
+                    reason: 'coding_agent',
+                    llm: {
+                        model: model,
+                        usage: aiUsage
+                    },
+                    mode: 'cache'
+                });
+            }
+
+            code = data.choices?.[0]?.message?.content || '';
+        }
         
         code = code.replace(/^```(?:javascript|js)?\n?/i, '').replace(/\n?```$/i, '').trim();
         
@@ -508,7 +584,7 @@ export async function router(
     const now = new Date();
     const date = now.toLocaleString('en-US', { timeZone: 'UTC' });
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    const response = await fetchWithRetry('https://openrouter.ai/api/v1/chat/completions', {
         method: 'POST',
         headers: headers as Record<string, string>,
         body: JSON.stringify({
@@ -668,7 +744,7 @@ export async function router(
         }
     }
 
-    const model = isExhausted ? MODELS.free : selectChatModel(streamer, isExhausted);
+    const model = isExhausted ? MODELS.exhausted : selectChatModel(streamer, isExhausted);
 
     const aiAnswer = await AiResponse(channelID, message, model, history, tags, options, toolContext);
 

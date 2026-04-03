@@ -8,8 +8,13 @@
 import { constructSystemMessages } from '../prompts.ai.js';
 import { getDragonflyClient } from '../../databases/dragonfly.database.js';
 import { ingestPolarSHEvent } from '../../polarsh.js';
-import { MODELS, TOKEN_LIMITS } from '../constants.js';
-import { error } from '../../logger.js';
+import { MODELS, TOKEN_LIMITS, MINIMAX_MODEL } from '../constants.js';
+import { minimaxChat, calculateMiniMaxCost } from '../minimax/minimax_client.js';
+import { createFetchWithRetry } from '../fetch.utils.js';
+import { error, debug } from '../../logger.js';
+
+const OPENROUTER_TIMEOUT = 30000;
+const fetchWithRetry = createFetchWithRetry({ timeout: OPENROUTER_TIMEOUT, retries: 3 });
 
 // ============================================================================
 // TYPE DEFINITIONS
@@ -158,8 +163,89 @@ export async function executeAiCommand(
     
     const model = selectModel(streamer);
     const maxTokens = getTokenLimit(model);
+    const isPro = streamer?.plan_tier === 'pro';
     
     const messages = constructSystemMessages(streamer, userContext, prompt, 'command');
+    
+    if (isPro) {
+        debug({ function: 'executeAiCommand', message: '[Command] Pro tier - using MiniMax', channelID, model: MINIMAX_MODEL }, { channelId: channelID, destination: 'console' });
+        const systemContent = (messages as any).find((m: any) => m.role === 'system')?.content as string | undefined;
+        const userMessage = (messages as any).find((m: any) => m.role === 'user');
+
+        debug({ function: 'executeAiCommand', message: '[Command] Extracted system content for MiniMax', channelID, systemContentLength: systemContent?.length }, { channelId: channelID, destination: 'console' });
+
+        try {
+            const result = await minimaxChat({
+                model: MINIMAX_MODEL,
+                messages: userMessage ? [userMessage] : [],
+                maxTokens,
+                system: systemContent,
+                channelID
+            });
+
+            const messageContent = result.content;
+
+            if (!messageContent) {
+                return {
+                    error: true,
+                    message: '[AI: Empty response received]'
+                };
+            }
+
+            if (channelID) {
+                try {
+                    await cacheClient.hIncrBy(`${channelID}:chatbot:usage`, 'total_tokens', result.inputTokens + result.outputTokens);
+                    await cacheClient.hIncrBy(`${channelID}:chatbot:usage`, 'prompt_tokens', result.inputTokens);
+                    await cacheClient.hIncrBy(`${channelID}:chatbot:usage`, 'completion_tokens', result.outputTokens);
+                    await cacheClient.expire(`${channelID}:chatbot:usage`, generateTimeLeftToNextMonthInSeconds());
+                    
+                    await cacheClient.set(`${channelID}:chatbot:command:last`, JSON.stringify({
+                        model: MINIMAX_MODEL,
+                        prompt: prompt.substring(0, 100),
+                        response: messageContent.substring(0, 200),
+                        usage: { prompt_tokens: result.inputTokens, completion_tokens: result.outputTokens, total_tokens: result.inputTokens + result.outputTokens },
+                        timestamp: new Date().toISOString()
+                    }));
+                } catch (cacheError) {
+                    await error({ function: 'executeAiCommand', error: 'Cache error tracking AI usage', err: cacheError instanceof Error ? cacheError.message : String(cacheError) }, { channelId: channelID, destination: 'both' });
+                }
+            }
+
+            const cost = calculateMiniMaxCost(result.inputTokens, result.outputTokens);
+            debug({ function: 'executeAiCommand', message: '[Command] MiniMax cost tracked', channelID, cost, inputTokens: result.inputTokens, outputTokens: result.outputTokens }, { channelId: channelID, destination: 'console' });
+
+            if (streamer.polar_sh_customer_id) {
+                ingestPolarSHEvent({
+                    customerId: streamer.polar_sh_customer_id,
+                    channelID: channelID,
+                    cost,
+                    reason: reason,
+                    llm: {
+                        model: MINIMAX_MODEL,
+                        usage: {
+                            prompt_tokens: result.inputTokens,
+                            completion_tokens: result.outputTokens,
+                            total_tokens: result.inputTokens + result.outputTokens
+                        }
+                    },
+                    mode: 'batch'
+                });
+            }
+
+            const sanitizedOutput = sanitizeOutput(messageContent);
+            return {
+                error: false,
+                message: sanitizedOutput
+            };
+
+        } catch (fetchError) {
+            await error({ function: 'executeAiCommand', message: '[Command] MiniMax fetch error', err: fetchError instanceof Error ? fetchError.message : String(fetchError) }, { channelId: channelID, destination: 'both' });
+            return {
+                error: true,
+                message: '[AI: Connection error]'
+            };
+        }
+    }
     
     const headers = {
         'Content-Type': 'application/json',
@@ -178,7 +264,7 @@ export async function executeAiCommand(
     };
     
     try {
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        const response = await fetchWithRetry('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: headers as Record<string, string>,
             body: JSON.stringify(body)

@@ -1,7 +1,11 @@
 import { error, debug } from '../../logger.js';
 import { EMBEDDING_DIMENSIONS } from '../constants.js';
+import { createFetchWithRetry } from '../fetch.utils.js';
 
 const EMBEDDING_API_URL = 'https://openrouter.ai/api/v1/embeddings';
+const EMBEDDING_TIMEOUT = 20000;
+
+const fetchWithRetry = createFetchWithRetry({ timeout: EMBEDDING_TIMEOUT, retries: 3 });
 
 export interface IOpenRouterEmbeddingRequest {
     model: string;
@@ -92,7 +96,7 @@ export async function generateEmbedding(text: string, model: string = 'qwen/qwen
             ...(dimensions && { dimensions })
         };
 
-        const response = await fetch(EMBEDDING_API_URL, {
+        const response = await fetchWithRetry(EMBEDDING_API_URL, {
             method: 'POST',
             headers: headers as Record<string, string>,
             body: JSON.stringify(requestBody)
@@ -201,7 +205,7 @@ export async function generateEmbeddings(texts: string[], model: string = 'qwen/
             ...(dimensions && { dimensions })
         };
 
-        const response = await fetch(EMBEDDING_API_URL, {
+        const response = await fetchWithRetry(EMBEDDING_API_URL, {
             method: 'POST',
             headers: headers as Record<string, string>,
             body: JSON.stringify(requestBody)

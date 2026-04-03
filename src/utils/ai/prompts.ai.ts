@@ -244,14 +244,15 @@ export function constructChatSystemMessages(
     </chat-history>
 
     <critical-rules>
-        1. Only reply to the user with the [CURRENT] timestamp and not to all the chat history unless the user asks you to do so.
-        2. Chat history and current message is formatted as [TIME] [BADGES] [USERNAME]: [MESSAGE]
-        3. Notice the user badges and adjust your response to the user's level and status based on your personality and the channel rules.
-        4. Keep your responses short and concise, avoid long paragraphs and keep it simple and easy to understand unless you feel like you need to elaborate more or is a complex topic. Aim for under 1000 characters.
-        5. Do not respond with any [TIME] [BADGES] [USERNAME]: [MESSAGE] format, only respond with the message.
-        6. If you are speaking directly to the user, do not forget to tag them with @username.
-        7. No hashtags.
-        8. Do not offer assistance; just react naturally to the context.
+        1. The message marked with [CURRENT] is the NEWEST message you must respond to - it is the user's latest reply or question.
+        2. If there was a previous message from the bot asking a question, the user is now answering that question - take their [CURRENT] response into account.
+        3. Chat history shows the conversation flow so far. Use it to understand the context of the current conversation.
+        4. Notice the user badges and adjust your response to the user's level and status based on your personality and the channel rules.
+        5. Keep your responses short and concise, avoid long paragraphs and keep it simple and easy to understand unless you feel like you need to elaborate more or is a complex topic. Aim for under 1000 characters.
+        6. Do not respond with any [TIME] [BADGES] [USERNAME]: [MESSAGE] format, only respond with the message.
+        7. If you are speaking directly to the user, do not forget to tag them with @username.
+        8. No hashtags.
+        9. Do not offer assistance; just react naturally to the context.
     </critical-rules>
     
     <tool-context>
@@ -265,7 +266,12 @@ export function constructChatSystemMessages(
     const username = userContext?.username || 'Anonymous';
     const badgePrefix = userContext?.badges ? `${userContext.badges}` : '';
     
-    const userContent = `[CURRENT] ${badgePrefix} ${username}: ${promptText}`;
+    // Make the CURRENT message more explicit for the LLM
+    const userContent = `=== NEW MESSAGE TO RESPOND TO ===
+${badgePrefix} ${username}: ${promptText}
+=== END OF NEW MESSAGE ===
+
+The message above is what you must respond to. If this is a reply to a question you previously asked, make sure to address the user's answer.`;
     
     return [
         {

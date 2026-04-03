@@ -5,7 +5,8 @@
  */
 
 export const MODELS = {
-    free: 'sao10k/l3-lunaris-8b:nitro',
+    free: 'liquid/lfm-2-24b-a2b',
+    exhausted: 'sao10k/l3-lunaris-8b:nitro',
     premium: 'nousresearch/hermes-4-70b:nitro',
     pro: 'minimax/minimax-m2-her:nitro'
 } as const;
@@ -20,6 +21,11 @@ export const CODING_MODELS = {
     free: 'z-ai/glm-4.5-air:nitro',
     exhausted: 'z-ai/glm-4.5-air'
 } as const;
+
+export const MINIMAX_MODEL = 'MiniMax-M2.7-highspeed';
+export const MINIMAX_BASE_URL = 'https://api.minimax.io/anthropic';
+export const MINIMAX_COST_PER_M_INPUT = 0.60;
+export const MINIMAX_COST_PER_M_OUTPUT = 2.40;
 
  export const DEFAULT_TIMEOUT_MS = 8000;
 
